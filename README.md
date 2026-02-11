@@ -1,6 +1,6 @@
 # fb-crawler
 
-# c_user datr fr i_user sb xs
+# xóa presence wd
 
 ## Getting started
 
