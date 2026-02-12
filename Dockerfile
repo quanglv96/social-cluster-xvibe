@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y dumb-init
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
+
 COPY . .
 
 EXPOSE 3001

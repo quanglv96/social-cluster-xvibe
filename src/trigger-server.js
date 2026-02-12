@@ -1,12 +1,10 @@
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { chromium } from 'playwright';
+import {chromium} from 'playwright';
 
-import { crawlPage } from './crawler.js';
-import { uploadExcel, updatePageCheckpoint } from './api.js';
-import { buildExcel } from './excel.js';
-import { config } from './config.js';
+import {crawlPage} from './crawler/crawler.js';
+import {uploadExcel, updatePageCheckpoint} from './crawler/apiCrawler.js';
+import {buildExcel} from './crawler/excel.js';
+import {config} from './config.js';
 
 const app = express();
 app.use(express.json());
@@ -17,28 +15,28 @@ let context;
 /**
  * ===== INIT BROWSER 1 LẦN =====
  */
-async function initBrowser() {
+async function initBrowser(rawCookie) {
 
     if (browser) return;
 
     console.log('🌐 Launch browser...');
+    console.log(rawCookie);
 
     browser = await chromium.launch({
         headless: config.headless
     });
 
     context = await browser.newContext();
-
-    // ===== LOAD COOKIE =====
-    const cookiePath = path.resolve(config.cookieFile);
-
-    if (fs.existsSync(cookiePath)) {
-        const cookies = JSON.parse(fs.readFileSync(cookiePath, 'utf-8'));
-        await context.addCookies(cookies);
-        console.log('🍪 Cookie loaded');
+    let cookies;
+    // 🔥 Nếu BE gửi string JSON
+    if (typeof rawCookie === 'string') {
+        cookies = JSON.parse(rawCookie);
+    } else {
+        cookies = rawCookie;
     }
+    await context.addCookies(cookies);
+    console.log('🍪 Cookie loaded');
 }
-
 /**
  * ===== TRIGGER CRAWL API =====
  */
@@ -46,21 +44,21 @@ app.post('/trigger-crawl', async (req, res) => {
 
     try {
 
-        const { id, last_image: lastImage } = req.body;
+        const {id, last_image: lastImage, cookie: cookie} = req.body;
 
         console.log('🔥 request id:', id);
         console.log('🔥 request lastImage:', lastImage);
 
-        if (!id || !lastImage) {
-            return res.status(400).json({ message: 'Missing id or lastImage' });
+        if (!id || !lastImage || !cookie) {
+            return res.status(400).json({message: 'Missing id or lastImage or cookie'});
         }
 
-        await initBrowser();
+        await initBrowser(cookie);
 
         console.log('\n===================================');
         console.log('🔥 TRIGGER CRAWL:', id);
 
-        const { images, newLastUrl, newLastHit } =
+        const {images, newLastUrl} =
             await crawlPage(
                 {
                     id,

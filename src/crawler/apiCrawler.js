@@ -1,29 +1,6 @@
 import axios from 'axios';
 import FormData from 'form-data';
-import fs from 'fs';
-import { config } from './config.js';
-
-/**
- * Lấy danh sách page cần crawl
- */
-export async function getPageList() {
-
-  const res = await axios.get(config.apiListPage);
-
-  console.log('🔎 RAW PAGE API RESPONSE:');
-  console.log(res.data);
-
-  const pages = Array.isArray(res.data)
-      ? res.data
-      : [res.data];   // ⭐ wrap object thành array
-
-  return pages.map(p => ({
-    id: p.id,
-    lastImage: p.last_image
-  }));
-}
-
-
+import { config } from '../config.js';
 /**
  * Upload file excel lên backend
  */
