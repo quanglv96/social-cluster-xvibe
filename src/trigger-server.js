@@ -1,10 +1,11 @@
 import express from 'express';
-import { chromium } from 'playwright';
+import {chromium} from 'playwright';
 
-import { crawlPage } from './crawler/crawler.js';
-import { uploadExcel, updatePageCheckpoint } from './crawler/apiCrawler.js';
-import { buildExcel } from './crawler/excel.js';
-import { config } from './config.js';
+import {crawlPage} from './crawler/crawler.js';
+import {PostGroup} from './PostGroup/PostGroup.js';
+import {uploadExcel, updatePageCheckpoint} from './crawler/apiCrawler.js';
+import {buildExcel} from './crawler/excel.js';
+import {config} from './config.js';
 import axios from "axios";
 
 const app = express();
@@ -16,7 +17,7 @@ let context;
 /**
  * ===== INIT BROWSER 1 LẦN =====
  */
-async function initBrowser({ rawCookie, username, password, type }) {
+async function initBrowser({rawCookie, username, password, type}) {
 
     if (!browser) {
         browser = await chromium.launch({
@@ -30,7 +31,7 @@ async function initBrowser({ rawCookie, username, password, type }) {
     }
 
     context = await browser.newContext({
-        viewport: { width: 1280, height: 800 },
+        viewport: {width: 1280, height: 800},
         userAgent:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
         locale: 'en-US',
@@ -142,7 +143,6 @@ async function initBrowser({ rawCookie, username, password, type }) {
 }
 
 
-
 async function isLoggedIn(context) {
     const cookies = await context.cookies();
     return cookies.some(c => c.name === 'c_user');
@@ -151,7 +151,7 @@ async function isLoggedIn(context) {
 async function updateCookie(type, newCookies) {
     await axios.post(`${config.updateCookie}`, {
         type: type,
-        cookie: newCookies
+        cookie: JSON.stringify(newCookies)
     });
 }
 
@@ -231,7 +231,7 @@ app.post('/trigger-crawl', async (req, res) => {
         console.log('🔥 request lastImage:', lastImage);
 
         if (!id || !lastImage) {
-            return res.status(400).json({ message: 'Missing id or lastImage' });
+            return res.status(400).json({message: 'Missing id or lastImage'});
         }
 
         await initBrowser({
@@ -244,9 +244,9 @@ app.post('/trigger-crawl', async (req, res) => {
         console.log('\n===================================');
         console.log('🔥 TRIGGER CRAWL:', id);
 
-        const { images, newLastUrl } =
+        const {images, newLastUrl} =
             await crawlPage(
-                { id, lastImage },
+                {id, lastImage},
                 context
             );
 
@@ -297,5 +297,62 @@ app.post('/trigger-crawl', async (req, res) => {
 const PORT = process.env.CRAWLER_PORT || 3001;
 
 app.listen(PORT, () => {
-    console.log(`🚀 FB crawler trigger server running at ${PORT}`);
+    console.log(`🚀 Server running at ${PORT}`);
+});
+
+
+/**
+ * ============================================================
+ * ================= POST GROUP TRIGGER =======================
+ * ============================================================
+ */
+app.post('/post_group', async (req, res) => {
+
+    try {
+
+        const {
+            cookie,
+            type,
+            user_name,
+            password,
+            page_admin_url,
+            content,
+            url_image,
+            url_groups
+        } = req.body;
+
+        if (!page_admin_url || !content || !url_groups?.length) {
+            return res.status(400).json({message: 'Missing params'});
+        }
+
+        await initBrowser({
+            rawCookie: cookie,
+            username: user_name,
+            password: password,
+            type: type
+        });
+
+        const postGroup = new PostGroup(context);
+
+        await postGroup.post({
+            pageAdminUrl: page_admin_url,
+            content: content,
+            imageUrl: url_image,
+            groupUrls: url_groups
+        });
+
+        res.json({
+            success: true,
+            message: "Posted to groups"
+        });
+
+    } catch (err) {
+
+        console.error(err);
+
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
 });
