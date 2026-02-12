@@ -7,6 +7,8 @@ import {uploadExcel, updatePageCheckpoint} from './crawler/apiCrawler.js';
 import {buildExcel} from './crawler/excel.js';
 import {config} from './config.js';
 import axios from "axios";
+import { TwitterPost } from './twitter/TwitterPost.js';
+
 
 const app = express();
 app.use(express.json());
@@ -356,3 +358,120 @@ app.post('/post_group', async (req, res) => {
         });
     }
 });
+
+app.post('/post_tweet', async (req, res) => {
+
+    try {
+
+        const {
+            cookie,
+            user_name,
+            password,
+            content,
+            url_images
+        } = req.body;
+
+        if (!content) {
+            return res.status(400).json({ message: 'Missing content' });
+        }
+
+        // ===== Tạo context riêng cho Twitter =====
+        const twContext = await browser.newContext({
+            viewport: { width: 1280, height: 800 },
+            userAgent:
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+            locale: 'en-US',
+            timezoneId: 'Asia/Ho_Chi_Minh'
+        });
+
+        await twContext.addInitScript(() => {
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => false
+            });
+        });
+
+        const page = await twContext.newPage();
+
+        let loggedIn = false;
+
+        /**
+         * ===== TRY COOKIE LOGIN =====
+         */
+        if (cookie) {
+            try {
+
+                const cookies = normalizeCookies(cookie);
+                await twContext.addCookies(cookies);
+
+                await page.goto('https://x.com/home');
+                await page.waitForTimeout(5000);
+
+                if (await page.$('a[data-testid="SideNav_NewTweet_Button"]')) {
+                    loggedIn = true;
+                    console.log("✅ Twitter cookie login success");
+                }
+
+            } catch (err) {
+                console.log("❌ Twitter cookie invalid");
+            }
+        }
+
+        /**
+         * ===== FALLBACK LOGIN =====
+         */
+        if (!loggedIn) {
+
+            if (!user_name || !password) {
+                throw new Error("Twitter credential missing");
+            }
+
+            console.log("🔐 Twitter fallback login");
+
+            await page.goto('https://x.com/i/flow/login');
+            await page.waitForSelector('input[name="text"]', { timeout: 20000 });
+
+            await page.fill('input[name="text"]', user_name);
+            await page.keyboard.press("Enter");
+            await page.waitForTimeout(3000);
+
+            await page.fill('input[name="password"]', password);
+            await page.keyboard.press("Enter");
+            await page.waitForTimeout(6000);
+
+            if (!await page.$('a[data-testid="SideNav_NewTweet_Button"]')) {
+                throw new Error("Twitter login failed");
+            }
+
+            console.log("✅ Twitter login success");
+        }
+
+        await page.close();
+
+        /**
+         * ===== POST TWEET =====
+         */
+        const twitterPost = new TwitterPost(twContext);
+
+        await twitterPost.post({
+            content,
+            imageUrls: url_images || []
+        });
+
+        await twContext.close();
+
+        res.json({
+            success: true,
+            message: "Tweet posted"
+        });
+
+    } catch (err) {
+
+        console.error("❌ Twitter trigger error:", err.message);
+
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+});
+
