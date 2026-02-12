@@ -17,6 +17,7 @@ export const config = {
   apiListPage: required('API_LIST_PAGE'),
   apiImportImage: required('API_IMPORT_IMAGE'),
   apiUpdatePage: required('API_UPDATE_PAGE'),
+  updateCookie: required('API_UPDATE_COOKIE'),
 
   // ===== Crawl Config =====
   headless: process.env.HEADLESS === 'true',
