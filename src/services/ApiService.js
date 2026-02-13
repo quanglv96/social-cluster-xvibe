@@ -26,12 +26,4 @@ export class ApiService {
             last_image: newLastUrl
         });
     }
-
-    static async updateCookie(type, cookieString) {
-
-        await axios.post(config.updateCookie, {
-            type: type,
-            cookie: cookieString
-        });
-    }
 }

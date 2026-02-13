@@ -1,5 +1,4 @@
 import express from 'express';
-import { config } from './config/config.js';
 import triggerRoutes from './routes/trigger.routes.js';
 
 const app = express();

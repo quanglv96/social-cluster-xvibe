@@ -133,7 +133,7 @@ router.post('/post_tweet', async (req, res) => {
 
         const resultFactory = await ContextFactory.create({
             ...dto,
-            type: 'twitter'
+            type: dto.type
         });
 
         context = resultFactory.context;
