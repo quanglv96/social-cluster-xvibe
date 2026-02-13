@@ -16,4 +16,4 @@ COPY . .
 EXPOSE 3001
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "src/trigger-server.js"]
+CMD ["node", "src/app.js"]
