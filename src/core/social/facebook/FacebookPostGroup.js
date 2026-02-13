@@ -3,11 +3,14 @@ import axios from 'axios';
 import path from 'path';
 import os from 'os';
 
+import { DelayService } from '../../../services/delay.service.js';
+
 export class FacebookPostGroup {
 
     constructor(context) {
         this.context = context;
         this.TAG = '[FacebookPostGroup]';
+        this.delay = new DelayService();
     }
 
     log(message, data = {}) {
@@ -38,7 +41,7 @@ export class FacebookPostGroup {
              * ===== DOWNLOAD IMAGE ONCE =====
              */
             if (imageUrl) {
-                this.log('Start downloading image', {url: imageUrl});
+                this.log('Start downloading image', { url: imageUrl });
                 imageFilePath = await this.downloadImage(imageUrl);
                 this.log('Image downloaded successfully', {
                     filePath: imageFilePath
@@ -68,14 +71,14 @@ export class FacebookPostGroup {
                         waitUntil: 'domcontentloaded'
                     });
 
-                    await page.waitForTimeout(5000);
+                    await this.delay.navigation('after goto group', page);
 
                     /**
                      * ===== CLICK POST BOX =====
                      */
                     const postBox = await page.waitForSelector(
                         'span:has-text("Bạn viết gì đi..."), span:has-text("Write something"), span:has-text("What\'s on your mind")',
-                        {timeout: 15000}
+                        { timeout: 15000 }
                     );
 
                     if (!postBox) {
@@ -85,14 +88,14 @@ export class FacebookPostGroup {
                     await postBox.click();
                     this.log('Post box clicked');
 
-                    await page.waitForTimeout(3000);
+                    await this.delay.action('after click post box', page);
 
                     /**
                      * ===== FIND DIALOG TEXTBOX =====
                      */
                     const textbox = await page.waitForSelector(
                         'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-                        {timeout: 10000}
+                        { timeout: 10000 }
                     );
 
                     if (!textbox) {
@@ -100,14 +103,18 @@ export class FacebookPostGroup {
                     }
 
                     await textbox.click();
+                    await this.delay.action('after focus textbox', page);
+
                     await page.keyboard.press('Control+A');
                     await page.keyboard.press('Backspace');
 
-                    await textbox.type(content, {delay: 30});
+                    await textbox.type(content, {
+                        delay: this.delay.random(40, 120)
+                    });
 
                     this.log('Content filled');
 
-                    await page.waitForTimeout(2000);
+                    await this.delay.action('after typing content', page);
 
                     /**
                      * ===== UPLOAD IMAGE =====
@@ -139,7 +146,7 @@ export class FacebookPostGroup {
                         if (!isDisabled) {
                             await btn.click();
                             clicked = true;
-                            this.log('Post button clicked', {selector});
+                            this.log('Post button clicked', { selector });
                             break;
                         }
                     }
@@ -148,9 +155,9 @@ export class FacebookPostGroup {
                         throw new Error('Cannot find enabled Post button');
                     }
 
-                    await page.waitForTimeout(8000);
+                    await this.delay.navigation('after click post button', page);
 
-                    this.log('Post success', {groupUrl});
+                    this.log('Post success', { groupUrl });
 
                 } catch (err) {
 
@@ -158,6 +165,13 @@ export class FacebookPostGroup {
                         groupUrl,
                         error: err.message
                     });
+                }
+
+                /**
+                 * ===== COOLDOWN BETWEEN GROUPS =====
+                 */
+                if (i < groups.length - 1) {
+                    await this.delay.betweenGroup('cooldown between groups');
                 }
             }
 
@@ -167,7 +181,7 @@ export class FacebookPostGroup {
 
             if (imageFilePath && fs.existsSync(imageFilePath)) {
                 fs.unlinkSync(imageFilePath);
-                this.log('Temporary image deleted', {imageFilePath});
+                this.log('Temporary image deleted', { imageFilePath });
             }
 
             if (!page.isClosed()) {
@@ -179,13 +193,13 @@ export class FacebookPostGroup {
 
     async switchToPage(page, pageAdminUrl) {
 
-        this.log('Switching profile', {pageAdminUrl});
+        this.log('Switching profile', { pageAdminUrl });
 
         await page.goto(pageAdminUrl, {
             waitUntil: 'domcontentloaded'
         });
 
-        await page.waitForTimeout(5000);
+        await this.delay.navigation('after goto page admin', page);
 
         const switchBtn = await page.$(
             'span:has-text("Chuyển ngay"), span:has-text("Switch Now")'
@@ -197,12 +211,11 @@ export class FacebookPostGroup {
         }
 
         await Promise.all([
-            page.waitForNavigation({waitUntil: 'domcontentloaded'}).catch(() => {
-            }),
+            page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {}),
             switchBtn.click()
         ]);
 
-        await page.waitForTimeout(5000);
+        await this.delay.navigation('after switch profile', page);
 
         this.log('Profile switched', {
             currentUrl: page.url()
@@ -225,49 +238,31 @@ export class FacebookPostGroup {
         return filePath;
     }
 
-    /**
-     * Upload file ảnh đã có sẵn
-     */
     async uploadImageFile(page, filePath) {
 
-        try {
-            console.log("🔍 Looking for file input...");
+        const inputFileSelectors = [
+            'div[role="dialog"] input[type="file"][accept*="image"]',
+            'div[role="dialog"] input[type="file"]',
+            'input[type="file"][accept*="image"]',
+            'input[type="file"]'
+        ];
 
-            const inputFileSelectors = [
-                'div[role="dialog"] input[type="file"][accept*="image"]',
-                'div[role="dialog"] input[type="file"]',
-                'input[type="file"][accept*="image"]',
-                'input[type="file"]'
-            ];
+        let inputFile = null;
 
-            let inputFile = null;
-            for (const selector of inputFileSelectors) {
-                console.log(`🔍 Trying file input selector: ${selector}`);
-                inputFile = await page.$(selector);
-                if (inputFile) {
-                    console.log(`✅ Found file input with selector: ${selector}`);
-                    break;
-                }
-            }
-
-            if (!inputFile) {
-                throw new Error("Cannot find file input");
-            }
-
-            console.log("📤 Setting file to input...");
-            await inputFile.setInputFiles(filePath);
-            console.log("✅ File set to input");
-
-            console.log("⏳ Waiting 5s for upload to complete...");
-            await page.waitForTimeout(5000);
-
-            console.log("✅✅✅ IMAGE UPLOAD SUCCESS ✅✅✅");
-
-        } catch (err) {
-            console.log("❌❌❌ IMAGE UPLOAD FAILED ❌❌❌");
-            console.log("❌ Error:", err.message);
-            console.log("❌ Stack:", err.stack);
+        for (const selector of inputFileSelectors) {
+            inputFile = await page.$(selector);
+            if (inputFile) break;
         }
+
+        if (!inputFile) {
+            throw new Error("Cannot find file input");
+        }
+
+        await inputFile.setInputFiles(filePath);
+
+        await this.delay.upload('after image upload');
+
+        this.log('Image uploaded successfully');
     }
 
 }
