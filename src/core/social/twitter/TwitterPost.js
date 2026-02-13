@@ -2,6 +2,7 @@ import fs from 'fs';
 import axios from 'axios';
 import path from 'path';
 import twemoji from 'twitter-text';
+
 export class TwitterPost {
 
     constructor(context) {
@@ -36,30 +37,8 @@ export class TwitterPost {
             throw new Error('Content cannot be empty');
         }
 
-        // ✅ Dùng twitter-text library (chính xác 100%)
-        const parsedTweet = twemoji.parseTweet(content);
-
-        console.log(`📝 Twitter weighted length: ${parsedTweet.weightedLength}/${MAX_LENGTH}`);
-        console.log(`📝 Raw length: ${content.length}`);
-        console.log(`✅ Valid: ${parsedTweet.valid}`);
-
-        let finalContent = content;
-
-        if (!parsedTweet.valid) {
-            console.log(`✂️ Content too long, truncating...`);
-
-            // Cắt từng ký tự cho đến khi valid
-            let truncated = content;
-            while (truncated.length > 0) {
-                truncated = truncated.slice(0, -1);
-                const testParse = twemoji.parseTweet(truncated);
-                if (testParse.valid) {
-                    finalContent = truncated;
-                    console.log(`✅ Truncated to: ${testParse.weightedLength}/${MAX_LENGTH}`);
-                    break;
-                }
-            }
-        }
+        // ✅ Truncate thông minh
+        const finalContent = this.truncateTwitterContent(content, MAX_LENGTH);
 
         const page = await this.context.newPage();
 
@@ -116,5 +95,67 @@ export class TwitterPost {
         }
 
         await page.close();
+    }
+
+    truncateTwitterContent(content, maxLength = 280) {
+        const parsedTweet = twemoji.parseTweet(content);
+
+        // Nếu hợp lệ, return luôn
+        if (parsedTweet.valid) {
+            return content;
+        }
+
+        console.log(`✂️ Content too long (${parsedTweet.weightedLength}/${maxLength}), truncating...`);
+
+        // ✅ Tìm tất cả hashtags
+        const hashtagRegex = /#[^\s#]+/g;
+        const hashtags = [];
+        let match;
+
+        while ((match = hashtagRegex.exec(content)) !== null) {
+            hashtags.push({
+                tag: match[0],
+                start: match.index,
+                end: match.index + match[0].length
+            });
+        }
+
+        if (hashtags.length === 0) {
+            // Không có hashtag, cắt bình thường
+            let truncated = content;
+            while (truncated.length > 0) {
+                truncated = truncated.slice(0, -1);
+                if (twemoji.parseTweet(truncated).valid) {
+                    return truncated;
+                }
+            }
+            return truncated;
+        }
+
+        // ✅ Cắt từng hashtag từ cuối lên đầu
+        for (let i = hashtags.length - 1; i >= 0; i--) {
+            const cutPosition = hashtags[i].start;
+            const truncated = content.substring(0, cutPosition).trimEnd();
+
+            const testParse = twemoji.parseTweet(truncated);
+
+            console.log(`🔍 Testing without "${hashtags[i].tag}": ${testParse.weightedLength}/${maxLength}`);
+
+            if (testParse.valid) {
+                console.log(`✅ Removed ${hashtags.length - i} hashtag(s) from the end`);
+                return truncated;
+            }
+        }
+
+        // Nếu vẫn quá dài sau khi xóa hết hashtags, cắt bình thường
+        let truncated = content;
+        while (truncated.length > 0) {
+            truncated = truncated.slice(0, -1);
+            if (twemoji.parseTweet(truncated).valid) {
+                return truncated;
+            }
+        }
+
+        return truncated;
     }
 }
