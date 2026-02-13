@@ -226,7 +226,8 @@ app.post('/trigger-crawl', async (req, res) => {
             cookie: cookie,
             type: type,
             user_name: username,
-            password: password
+            password: password,
+            source: source
         } = req.body;
 
         console.log('🔥 request id:', id);
@@ -263,7 +264,7 @@ app.post('/trigger-crawl', async (req, res) => {
 
         console.log(`📸 Collected ${images.length} images`);
 
-        const excelFile = await buildExcel(id, images);
+        const excelFile = await buildExcel(id, images, source);
 
         console.log('📄 Excel created:', excelFile);
 
