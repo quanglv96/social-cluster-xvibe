@@ -6,7 +6,8 @@ import os from 'os';
 import { DelayService } from '../../../services/delay.service.js';
 
 export class FacebookPostGroup {
-
+    static lastMode = 'PAGE';
+    // để lần đầu chạy sẽ dùng PROFILE
     constructor(context) {
         this.context = context;
         this.TAG = '[FacebookPostGroup]';
@@ -19,7 +20,15 @@ export class FacebookPostGroup {
             data
         );
     }
+    getNextPostMode() {
+        const next =
+            FacebookPostGroup.lastMode === 'PAGE'
+                ? 'PROFILE'
+                : 'PAGE';
 
+        FacebookPostGroup.lastMode = next;
+        return next;
+    }
     async post({
                    page_admin_url: pageAdminUrl,
                    content,
@@ -51,7 +60,12 @@ export class FacebookPostGroup {
             /**
              * ===== SWITCH PROFILE =====
              */
-            await this.switchToPage(page, pageAdminUrl);
+            const postMode = this.getNextPostMode();
+
+            this.log('Auto select posting mode', { postMode });
+            if (postMode === 'PAGE' && pageAdminUrl) {
+                await this.switchToPage(page, pageAdminUrl);
+            }
 
             const groups = groupUrls.slice(0, 10);
 
