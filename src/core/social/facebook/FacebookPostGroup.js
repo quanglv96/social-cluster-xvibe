@@ -58,6 +58,21 @@ export class FacebookPostGroup {
             }
 
             /**
+             * ===== POST TO PROFILE FIRST =====
+             */
+
+            await page.goto('https://www.facebook.com/', {
+                waitUntil: 'domcontentloaded'
+            });
+
+            await this.delay.navigation('after goto home', page);
+            try {
+                await this.postToProfile(page, content, imageFilePath);
+            } catch (err) {
+                this.log('Profile post failed', { error: err.message });
+            }
+
+            /**
              * ===== SWITCH PROFILE =====
              */
             const postMode = this.getNextPostMode();
@@ -205,6 +220,94 @@ export class FacebookPostGroup {
         }
     }
 
+
+    async postToProfile(page, content, imageFilePath) {
+
+        this.log('Start posting to PROFILE timeline');
+
+        /**
+         * ===== CLICK POST BOX =====
+         */
+        const postBox = await page.waitForSelector(
+            'div[role="button"]:has(span:has-text("nghĩ gì")), \
+             div[role="button"]:has(span:has-text("What\'s on your mind"))',
+            { timeout: 20000 }
+        );
+
+        if (!postBox) {
+            throw new Error('Cannot find profile post box');
+        }
+
+        await postBox.click();
+        await this.delay.action('after click profile post box', page);
+
+        /**
+         * ===== FIND TEXTBOX =====
+         */
+        const textbox = await page.waitForSelector(
+            'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
+            { timeout: 10000 }
+        );
+
+        if (!textbox) {
+            throw new Error('Cannot find profile textbox');
+        }
+
+        await textbox.click();
+        await page.keyboard.press('Control+A');
+        await page.keyboard.press('Backspace');
+
+        await textbox.type(content, {
+            delay: this.delay.random(40, 120)
+        });
+
+        this.log('Profile content filled');
+
+        await this.delay.action('after typing profile content', page);
+
+        /**
+         * ===== UPLOAD IMAGE =====
+         */
+        if (imageFilePath) {
+            await this.uploadImageFile(page, imageFilePath);
+        }
+
+        /**
+         * ===== CLICK POST BUTTON =====
+         */
+        const postBtnSelectors = [
+            'div[role="dialog"] div[aria-label="Đăng"]',
+            'div[role="dialog"] div[aria-label="Post"]',
+            'div[role="dialog"] div[role="button"]:has-text("Đăng")',
+            'div[role="dialog"] div[role="button"]:has-text("Post")',
+        ];
+
+        let clicked = false;
+
+        for (const selector of postBtnSelectors) {
+            const btn = await page.$(selector);
+            if (!btn) continue;
+
+            const isDisabled = await btn.evaluate(el =>
+                el.getAttribute('aria-disabled') === 'true'
+            );
+
+            if (!isDisabled) {
+                await btn.click();
+                clicked = true;
+                this.log('Profile post button clicked', { selector });
+                break;
+            }
+        }
+
+        if (!clicked) {
+            throw new Error('Cannot find enabled profile Post button');
+        }
+
+        await this.delay.navigation('after click profile post', page);
+
+        this.log('Profile post success');
+    }
     async switchToPage(page, pageAdminUrl) {
 
         this.log('Switching profile', { pageAdminUrl });
