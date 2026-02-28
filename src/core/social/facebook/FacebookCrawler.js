@@ -24,7 +24,26 @@ export class FacebookCrawler {
             await page.goto(last_image, { waitUntil: 'domcontentloaded' });
             await page.waitForTimeout(5000);
             console.log(`[${crawlId}] ✅ Viewer loaded`);
+            //
+            // 🔥 Click nút toàn màn hình nếu tồn tại
+            //
+            try {
+                const fullscreenButton = await page.$(
+                    'div[aria-label="Chuyển sang toàn màn hình"][role="button"], div[aria-label="Switch to fullscreen"][role="button"]'
+                );
 
+                if (fullscreenButton) {
+                    console.log(`[${crawlId}] 🖥 Switching to fullscreen mode...`);
+                    await fullscreenButton.click();
+                    await page.waitForTimeout(2000);
+                    console.log(`[${crawlId}] ✅ Fullscreen activated`);
+                } else {
+                    console.log(`[${crawlId}] ℹ Fullscreen button not found`);
+                }
+
+            } catch (err) {
+                console.log(`[${crawlId}] ⚠ Fullscreen click failed: ${err.message}`);
+            }
             const images = [];
             let newLastUrl = last_image;
 
