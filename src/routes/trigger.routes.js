@@ -96,5 +96,16 @@ router.post('/post_group', (req, res) =>
 router.post('/post_tweet', (req, res) =>
     handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)
 );
+router.post('/', (req, res) =>
+    handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)
+);
+router.post('/bot/sleep', async (req, res) => {
+    await SessionManager.sleep();
+    res.json({ status: 'sleeping' });
+});
 
+router.post('/bot/wakeup', async (req, res) => {
+    await SessionManager.wakeup();
+    res.json({ status: 'running' });
+});
 export default router;

@@ -12,10 +12,7 @@ export class SessionManager {
     // =========================
     // PUBLIC
     // =========================
-    static async getRootPage() {
-        const { rootPage } = await this.getSession();
-        return rootPage;
-    }
+
     static async getSession() {
 
         if (!this.context || await this.#isExpired()) {
@@ -186,5 +183,57 @@ export class SessionManager {
 
     static #random(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+    static status = 'running'; // running | sleeping
+
+    static async sleep() {
+
+        console.log('[Bot] Going to sleep');
+
+        if (!this.context) return;
+
+        try {
+            await this.context.close();
+        } catch (e) {
+            console.warn('Sleep error:', e.message);
+        }
+
+        this.context = null;
+        this.rootPage = null;
+        this.navigator = null;
+        this.hasEvent = false;
+    }
+
+    static async wakeup() {
+
+        if (this.context) {
+            console.log('[Bot] Already running');
+            return;
+        }
+
+        console.log('[Bot] Waking up');
+
+        await this.#ensureInit();
+
+        // đảm bảo root tồn tại
+        if (!this.rootPage || this.rootPage.isClosed()) {
+            this.rootPage = await this.context.newPage();
+            await this.#gotoRoot();
+        }
+
+        // reset event state
+        this.hasEvent = false;
+
+        // start navigator
+        this.navigator = new XvibeNavigator(
+            this.rootPage,
+            async () => this.hasEvent
+        );
+
+        this.navigator.start().catch(err =>
+            console.warn('[Navigator Error]', err.message)
+        );
+
+        console.log('[Bot] Navigator started');
     }
 }
