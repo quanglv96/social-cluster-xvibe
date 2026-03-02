@@ -40,13 +40,50 @@ export class FacebookAuth extends BaseAuth {
                     waitUntil: 'domcontentloaded'
                 });
 
-                await page.fill('input[name="email"]', '');
-                await page.fill('input[name="pass"]', '');
+                await page.waitForTimeout(3000);
 
-                await page.fill('input[name="email"]', user_name);
-                await page.fill('input[name="pass"]', password);
+                // Trường hợp login form bình thường
+                const emailInput = page.locator('input[name="email"]');
+                const passInput = page.locator('input[name="pass"]');
 
-                await page.click('button[name="login"]');
+                if (await emailInput.count() > 0) {
+                    await emailInput.fill(user_name);
+
+                    // Có thể Facebook yêu cầu bấm Continue trước
+                    const continueBtn = page.locator('span:has-text("Continue")');
+
+                    if (await continueBtn.count() > 0) {
+                        await continueBtn.click();
+                        await page.waitForTimeout(3000);
+                    }
+
+                    if (await passInput.count() > 0) {
+                        await passInput.fill(password);
+                    }
+
+                    // Sau khi nhập password xong
+                    await page.keyboard.press('Tab');
+                    await page.keyboard.press('Tab');
+                    await page.keyboard.press('Enter');
+
+                } else {
+                    const continueBtn = page.getByText('Continue', { exact: true })
+                    if (await continueBtn.count() > 0) {
+                        await continueBtn.click();
+                    }
+
+                    await page.waitForTimeout(3000);
+
+                    if (await passInput.count() > 0) {
+                        await passInput.fill(password);
+                    }
+
+                    // Sau khi nhập password xong
+                    await page.keyboard.press('Tab');
+                    await page.keyboard.press('Tab');
+                    await page.keyboard.press('Enter');
+                }
+
                 await page.waitForTimeout(8000);
 
                 if (await this.isLoggedIn(context)) {
