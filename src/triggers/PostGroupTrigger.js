@@ -1,5 +1,5 @@
 export class PostGroupTrigger {
-
+    static useEventPage = true;
     constructor(social) {
         this.social = social;
     }

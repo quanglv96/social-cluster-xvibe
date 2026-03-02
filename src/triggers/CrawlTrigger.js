@@ -2,7 +2,7 @@ import { ExcelService } from '../services/ExcelService.js';
 import { ApiService } from '../services/ApiService.js';
 
 export class CrawlTrigger {
-
+    static useEventPage = true;
     constructor(social) {
         this.social = social;
     }

@@ -1,5 +1,4 @@
 import { BaseSocial } from '../BaseSocial.js';
-import {SessionManager} from "../../session/SessionManager.js";
 import {XvibeNavigator} from "../XvibeNavigator.js";
 
 export class XvibeSocial extends BaseSocial {
@@ -8,11 +7,9 @@ export class XvibeSocial extends BaseSocial {
         super(context);
     }
 
-    async openVibeFlow() {
-
-        const { rootPage } = await SessionManager.getSession();
-
-        const navigator = new XvibeNavigator(rootPage);
+    async openVibeFlow(dto, page) {
+        // page ở đây chính là rootPage
+        const navigator = new XvibeNavigator(page);
 
         await navigator.openVibeAndInteract();
     }

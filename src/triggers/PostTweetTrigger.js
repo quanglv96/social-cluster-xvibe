@@ -1,5 +1,5 @@
 export class PostTweetTrigger {
-
+    static useEventPage = true;
     constructor(social) {
         this.social = social;
     }

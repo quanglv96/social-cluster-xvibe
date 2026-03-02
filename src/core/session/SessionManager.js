@@ -1,4 +1,5 @@
 import { BrowserManager } from '../browser/BrowserManager.js';
+import {XvibeNavigator} from "../social/XvibeNavigator.js";
 
 export class SessionManager {
 
@@ -11,7 +12,10 @@ export class SessionManager {
     // =========================
     // PUBLIC
     // =========================
-
+    static async getRootPage() {
+        const { rootPage } = await this.getSession();
+        return rootPage;
+    }
     static async getSession() {
 
         if (!this.context || await this.#isExpired()) {
@@ -42,7 +46,8 @@ export class SessionManager {
         const { context } = await this.getSession();
         return await context.newPage();
     }
-
+    static hasEvent = false;
+    static navigator = null;
     /**
      * Đóng event page và restore root
      */
@@ -59,6 +64,22 @@ export class SessionManager {
         }
 
         await this.#restoreRoot();
+
+        // reset event state
+        this.hasEvent = false;
+
+        if (this.rootPage && !this.rootPage.isClosed()) {
+
+            this.navigator = new XvibeNavigator(
+                this.rootPage,
+                async () => this.hasEvent // callback stop condition
+            );
+
+            // chạy nền không block Express
+            this.navigator.start().catch(err =>
+                console.warn('[Navigator Error]', err.message)
+            );
+        }
     }
 
     // =========================

@@ -36,21 +36,31 @@ async function handleRequest(req, res, actionName, TriggerClass) {
     logStart(requestId, actionName, dto);
 
     let page;
+    let rootPage;
 
     try {
 
-        // ✅ Get long-lived session
-        await SessionManager.getSession();
+        // Always ensure session
+        const session = await SessionManager.getSession();
+        rootPage = session.rootPage;
 
-        // ✅ Create event page
-        page = await SessionManager.createEventPage();
+        // 🔴 STOP root auto nếu đang chạy
+        SessionManager.hasEvent = true;
 
-        // ✅ Create social via factory (KHÔNG lấy context nữa)
+        if (SessionManager.navigator) {
+            SessionManager.navigator.stop();
+        }
+        // Nếu trigger yêu cầu event page
+        if (TriggerClass.useEventPage) {
+            page = await SessionManager.createEventPage();
+        }
+
         const resultFactory = await ContextFactory.create(dto);
 
         const trigger = new TriggerClass(resultFactory.social);
 
-        await trigger.execute(dto, page);
+        // Truyền page nếu có, không thì truyền root
+        await trigger.execute(dto, page || rootPage);
 
         res.json({ success: true });
 
@@ -66,6 +76,8 @@ async function handleRequest(req, res, actionName, TriggerClass) {
         if (page) {
             await SessionManager.closeEventPage(page);
         }
+        // 🔥 Sau khi event xong → cho root chạy lại
+        SessionManager.hasEvent = false;
     }
 }
 
