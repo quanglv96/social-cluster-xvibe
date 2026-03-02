@@ -163,6 +163,10 @@ export class SessionManager {
 
         try {
             await this.rootPage.bringToFront();
+            // XÓA sessionStorage trước khi reload
+            await this.rootPage.evaluate(() => {
+                sessionStorage.clear();
+            });
 
             // Nếu không còn ở domain → goto lại
             if (!this.rootPage.url().includes('xvibe.me')) {

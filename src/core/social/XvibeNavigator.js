@@ -72,7 +72,9 @@ export class XvibeNavigator {
             if (counter >= 100) {
                 await this.page.waitForTimeout(1500);
                 console.log('[Navigator] Reload after 100 actions');
-
+                await this.page.evaluate(() => {
+                    sessionStorage.clear();
+                });
                 await this.page.reload({
                     waitUntil: 'domcontentloaded'
                 });
