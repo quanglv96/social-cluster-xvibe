@@ -14,7 +14,15 @@ export class TwitterSocial extends BaseSocial {
         await this.auth.authenticate(this.context, dto);
     }
 
-    async post(dto) {
-        return await this.postService.post(dto);
+    /**
+     * page được inject từ SessionManager
+     */
+    async post(dto, page) {
+
+        if (!page) {
+            throw new Error("TwitterSocial.post requires an event page");
+        }
+
+        return await this.postService.post(dto, page);
     }
 }

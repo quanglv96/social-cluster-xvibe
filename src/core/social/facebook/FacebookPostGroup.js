@@ -6,8 +6,9 @@ import os from 'os';
 import { DelayService } from '../../../services/delay.service.js';
 
 export class FacebookPostGroup {
+
     static lastMode = 'PAGE';
-    // để lần đầu chạy sẽ dùng PROFILE
+
     constructor(context) {
         this.context = context;
         this.TAG = '[FacebookPostGroup]';
@@ -20,6 +21,7 @@ export class FacebookPostGroup {
             data
         );
     }
+
     getNextPostMode() {
         const next =
             FacebookPostGroup.lastMode === 'PAGE'
@@ -29,14 +31,21 @@ export class FacebookPostGroup {
         FacebookPostGroup.lastMode = next;
         return next;
     }
+
+    /**
+     * 🔥 page được truyền từ SessionManager
+     */
     async post({
                    page_admin_url: pageAdminUrl,
                    content,
                    url_image: imageUrl,
                    url_groups: groupUrls
-               }) {
+               }, page) {
 
-        const page = await this.context.newPage();
+        if (!page) {
+            throw new Error("FacebookPostGroup requires an event page");
+        }
+
         let imageFilePath = null;
 
         try {
@@ -50,7 +59,7 @@ export class FacebookPostGroup {
              * ===== DOWNLOAD IMAGE ONCE =====
              */
             if (imageUrl) {
-                this.log('Start downloading image', { url: imageUrl });
+                this.log('Start downloading image', {url: imageUrl});
                 imageFilePath = await this.downloadImage(imageUrl);
                 this.log('Image downloaded successfully', {
                     filePath: imageFilePath
@@ -60,16 +69,16 @@ export class FacebookPostGroup {
             /**
              * ===== POST TO PROFILE FIRST =====
              */
-
             await page.goto('https://www.facebook.com/', {
                 waitUntil: 'domcontentloaded'
             });
 
             await this.delay.navigation('after goto home', page);
+
             try {
                 await this.postToProfile(page, content, imageFilePath);
             } catch (err) {
-                this.log('Profile post failed', { error: err.message });
+                this.log('Profile post failed', {error: err.message});
             }
 
             /**
@@ -77,7 +86,8 @@ export class FacebookPostGroup {
              */
             const postMode = this.getNextPostMode();
 
-            this.log('Auto select posting mode', { postMode });
+            this.log('Auto select posting mode', {postMode});
+
             if (postMode === 'PAGE' && pageAdminUrl) {
                 await this.switchToPage(page, pageAdminUrl);
             }
@@ -102,12 +112,9 @@ export class FacebookPostGroup {
 
                     await this.delay.navigation('after goto group', page);
 
-                    /**
-                     * ===== CLICK POST BOX =====
-                     */
                     const postBox = await page.waitForSelector(
                         'span:has-text("Bạn viết gì đi..."), span:has-text("Write something"), span:has-text("What\'s on your mind")',
-                        { timeout: 15000 }
+                        {timeout: 15000}
                     );
 
                     if (!postBox) {
@@ -119,12 +126,9 @@ export class FacebookPostGroup {
 
                     await this.delay.action('after click post box', page);
 
-                    /**
-                     * ===== FIND DIALOG TEXTBOX =====
-                     */
                     const textbox = await page.waitForSelector(
                         'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-                        { timeout: 10000 }
+                        {timeout: 10000}
                     );
 
                     if (!textbox) {
@@ -145,16 +149,10 @@ export class FacebookPostGroup {
 
                     await this.delay.action('after typing content', page);
 
-                    /**
-                     * ===== UPLOAD IMAGE =====
-                     */
                     if (imageFilePath) {
                         await this.uploadImageFile(page, imageFilePath);
                     }
 
-                    /**
-                     * ===== CLICK POST BUTTON =====
-                     */
                     const postBtnSelectors = [
                         'div[role="dialog"] div[aria-label="Đăng"]',
                         'div[role="dialog"] div[aria-label="Post"]',
@@ -175,7 +173,7 @@ export class FacebookPostGroup {
                         if (!isDisabled) {
                             await btn.click();
                             clicked = true;
-                            this.log('Post button clicked', { selector });
+                            this.log('Post button clicked', {selector});
                             break;
                         }
                     }
@@ -186,7 +184,7 @@ export class FacebookPostGroup {
 
                     await this.delay.navigation('after click post button', page);
 
-                    this.log('Post success', { groupUrl });
+                    this.log('Post success', {groupUrl});
 
                 } catch (err) {
 
@@ -196,9 +194,6 @@ export class FacebookPostGroup {
                     });
                 }
 
-                /**
-                 * ===== COOLDOWN BETWEEN GROUPS =====
-                 */
                 if (i < groups.length - 1) {
                     await this.delay.betweenGroup('cooldown between groups');
                 }
@@ -210,133 +205,10 @@ export class FacebookPostGroup {
 
             if (imageFilePath && fs.existsSync(imageFilePath)) {
                 fs.unlinkSync(imageFilePath);
-                this.log('Temporary image deleted', { imageFilePath });
+                this.log('Temporary image deleted', {imageFilePath});
             }
 
-            if (!page.isClosed()) {
-                await page.close();
-                this.log('Browser page closed');
-            }
         }
-    }
-
-
-    async postToProfile(page, content, imageFilePath) {
-
-        this.log('Start posting to PROFILE timeline');
-
-        /**
-         * ===== CLICK POST BOX =====
-         */
-        const postBox = await page.waitForSelector(
-            'div[role="button"]:has(span:has-text("nghĩ gì")), \
-             div[role="button"]:has(span:has-text("What\'s on your mind"))',
-            { timeout: 20000 }
-        );
-
-        if (!postBox) {
-            throw new Error('Cannot find profile post box');
-        }
-
-        await postBox.click();
-        await this.delay.action('after click profile post box', page);
-
-        /**
-         * ===== FIND TEXTBOX =====
-         */
-        const textbox = await page.waitForSelector(
-            'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-            { timeout: 10000 }
-        );
-
-        if (!textbox) {
-            throw new Error('Cannot find profile textbox');
-        }
-
-        await textbox.click();
-        await page.keyboard.press('Control+A');
-        await page.keyboard.press('Backspace');
-
-        await textbox.type(content, {
-            delay: this.delay.random(40, 120)
-        });
-
-        this.log('Profile content filled');
-
-        await this.delay.action('after typing profile content', page);
-
-        /**
-         * ===== UPLOAD IMAGE =====
-         */
-        if (imageFilePath) {
-            await this.uploadImageFile(page, imageFilePath);
-        }
-
-        /**
-         * ===== CLICK POST BUTTON =====
-         */
-        const postBtnSelectors = [
-            'div[role="dialog"] div[aria-label="Đăng"]',
-            'div[role="dialog"] div[aria-label="Post"]',
-            'div[role="dialog"] div[role="button"]:has-text("Đăng")',
-            'div[role="dialog"] div[role="button"]:has-text("Post")',
-        ];
-
-        let clicked = false;
-
-        for (const selector of postBtnSelectors) {
-            const btn = await page.$(selector);
-            if (!btn) continue;
-
-            const isDisabled = await btn.evaluate(el =>
-                el.getAttribute('aria-disabled') === 'true'
-            );
-
-            if (!isDisabled) {
-                await btn.click();
-                clicked = true;
-                this.log('Profile post button clicked', { selector });
-                break;
-            }
-        }
-
-        if (!clicked) {
-            throw new Error('Cannot find enabled profile Post button');
-        }
-
-        await this.delay.navigation('after click profile post', page);
-
-        this.log('Profile post success');
-    }
-    async switchToPage(page, pageAdminUrl) {
-
-        this.log('Switching profile', { pageAdminUrl });
-
-        await page.goto(pageAdminUrl, {
-            waitUntil: 'domcontentloaded'
-        });
-
-        await this.delay.navigation('after goto page admin', page);
-
-        const switchBtn = await page.$(
-            'span:has-text("Chuyển ngay"), span:has-text("Switch Now")'
-        );
-
-        if (!switchBtn) {
-            this.log('Switch button not found, continue current profile');
-            return;
-        }
-
-        await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {}),
-            switchBtn.click()
-        ]);
-
-        await this.delay.navigation('after switch profile', page);
-
-        this.log('Profile switched', {
-            currentUrl: page.url()
-        });
     }
 
     async downloadImage(url) {
@@ -381,5 +253,4 @@ export class FacebookPostGroup {
 
         this.log('Image uploaded successfully');
     }
-
 }

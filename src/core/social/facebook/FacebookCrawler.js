@@ -1,4 +1,4 @@
-import {config} from "../../../config/config.js";
+import { config } from "../../../config/config.js";
 
 export class FacebookCrawler {
 
@@ -6,7 +6,14 @@ export class FacebookCrawler {
         this.context = context;
     }
 
-    async crawl({ id, last_image }) {
+    /**
+     * page được truyền từ SessionManager (event tab)
+     */
+    async crawl({ id, last_image }, page) {
+
+        if (!page) {
+            throw new Error("FacebookCrawler requires an event page");
+        }
 
         const crawlId = id || `CRAWL_${Date.now()}`;
         const startTime = Date.now();
@@ -14,9 +21,7 @@ export class FacebookCrawler {
         console.log(`[${crawlId}] =============================`);
         console.log(`[${crawlId}] 📸 START FACEBOOK CRAWL`);
         console.log(`[${crawlId}] Last image: ${last_image}`);
-
-        const page = await this.context.newPage();
-        console.log(`[${crawlId}] 🌐 New page created`);
+        console.log(`[${crawlId}] 🌐 Using injected event page`);
 
         try {
 
@@ -114,8 +119,9 @@ export class FacebookCrawler {
 
         } finally {
 
-            console.log(`[${crawlId}] 🔒 Closing page`);
-            await page.close();
+            console.log(
+                `[${crawlId}] ⏱ Finished after ${Date.now() - startTime}ms`
+            );
             console.log(`[${crawlId}] =============================\n`);
         }
     }

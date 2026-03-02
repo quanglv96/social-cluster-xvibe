@@ -1,5 +1,6 @@
 import { FacebookSocial } from '../social/facebook/FacebookSocial.js';
 import { TwitterSocial } from '../social/twitter/TwitterSocial.js';
+import {XvibeSocial} from "../social/xvibe/XvibeSocial.js";
 
 export class SocialFactory {
 
@@ -13,7 +14,8 @@ export class SocialFactory {
 
             case 'POST_TWITTER':
                 return new TwitterSocial(context);
-
+            case 'XVIBE_FLOW':
+                return new XvibeSocial(context);
             default:
                 throw new Error("Unsupported social type");
         }

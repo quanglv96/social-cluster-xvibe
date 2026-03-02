@@ -4,7 +4,12 @@ export class PostGroupTrigger {
         this.social = social;
     }
 
-    async execute(dto) {
-        return await this.social.postGroupAction(dto);
+    async execute(dto, page) {
+
+        if (!page) {
+            throw new Error("PostGroupTrigger requires an event page");
+        }
+
+        return await this.social.postGroupAction(dto, page);
     }
 }

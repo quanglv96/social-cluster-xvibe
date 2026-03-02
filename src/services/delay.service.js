@@ -12,8 +12,8 @@ export class DelayService {
             uploadMin: 4000,
             uploadMax: 9000,
 
-            betweenGroupMin: 15000,
-            betweenGroupMax: 45000,
+            betweenGroupMin: 4000,
+            betweenGroupMax: 9000,
 
             scrollProbability: 0.35, // xác suất mỗi chunk có scroll
 

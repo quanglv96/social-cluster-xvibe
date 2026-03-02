@@ -1,8 +1,9 @@
 import express from 'express';
-import { ContextFactory } from '../core/browser/ContextFactory.js';
+import { SessionManager } from '../core/session/SessionManager.js';
 import { CrawlTrigger } from '../triggers/CrawlTrigger.js';
 import { PostGroupTrigger } from '../triggers/PostGroupTrigger.js';
 import { PostTweetTrigger } from '../triggers/PostTweetTrigger.js';
+import { ContextFactory } from '../core/browser/ContextFactory.js';
 
 const router = express.Router();
 
@@ -10,7 +11,6 @@ function logStart(requestId, action, dto) {
     console.log(`\n[${requestId}] =============================`);
     console.log(`[${requestId}] 🚀 START ${action}`);
     console.log(`[${requestId}] Type: ${dto.type}`);
-    console.log(`[${requestId}] Time: ${new Date().toISOString()}`);
 }
 
 function logEnd(requestId, duration) {
@@ -25,75 +25,32 @@ function logError(requestId, err, duration) {
 }
 
 /* ===============================
-   CRAWL
+   COMMON HANDLER TEMPLATE
 ================================ */
-router.post('/trigger-crawl', async (req, res) => {
+async function handleRequest(req, res, actionName, TriggerClass) {
 
     const dto = req.body;
     const requestId = dto.id || `REQ_${Date.now()}`;
     const startTime = Date.now();
 
-    let context;
+    logStart(requestId, actionName, dto);
 
-    logStart(requestId, 'CRAWL', dto);
-
-    try {
-
-        console.log(`[${requestId}] 🌐 Creating browser context...`);
-        const resultFactory = await ContextFactory.create(dto);
-        context = resultFactory.context;
-
-        console.log(`[${requestId}] ✅ Context created`);
-
-        const trigger = new CrawlTrigger(resultFactory.social);
-
-        console.log(`[${requestId}] 🔍 Executing CrawlTrigger...`);
-        const result = await trigger.execute(dto);
-
-        res.json({ success: true, ...result });
-
-        logEnd(requestId, Date.now() - startTime);
-
-    } catch (err) {
-
-        logError(requestId, err, Date.now() - startTime);
-        res.status(500).json({ success: false, error: err.message });
-
-    } finally {
-
-        if (context) {
-            console.log(`[${requestId}] 🔒 Closing browser context`);
-            await context.close();
-        }
-    }
-});
-
-
-/* ===============================
-   POST GROUP
-================================ */
-router.post('/post_group', async (req, res) => {
-
-    const dto = req.body;
-    const requestId = dto.id || `REQ_${Date.now()}`;
-    const startTime = Date.now();
-
-    let context;
-
-    logStart(requestId, 'POST_GROUP', dto);
+    let page;
 
     try {
 
-        console.log(`[${requestId}] 🌐 Creating browser context...`);
+        // ✅ Get long-lived session
+        await SessionManager.getSession();
+
+        // ✅ Create event page
+        page = await SessionManager.createEventPage();
+
+        // ✅ Create social via factory (KHÔNG lấy context nữa)
         const resultFactory = await ContextFactory.create(dto);
-        context = resultFactory.context;
 
-        console.log(`[${requestId}] ✅ Context created`);
+        const trigger = new TriggerClass(resultFactory.social);
 
-        const trigger = new PostGroupTrigger(resultFactory.social);
-
-        console.log(`[${requestId}] 📤 Executing PostGroupTrigger...`);
-        await trigger.execute(dto);
+        await trigger.execute(dto, page);
 
         res.json({ success: true });
 
@@ -106,61 +63,26 @@ router.post('/post_group', async (req, res) => {
 
     } finally {
 
-        if (context) {
-            console.log(`[${requestId}] 🔒 Closing browser context`);
-            await context.close();
+        if (page) {
+            await SessionManager.closeEventPage(page);
         }
     }
-});
-
+}
 
 /* ===============================
-   POST TWEET
+   ROUTES
 ================================ */
-router.post('/post_tweet', async (req, res) => {
 
-    const dto = req.body;
-    const requestId = dto.id || `REQ_${Date.now()}`;
-    const startTime = Date.now();
+router.post('/trigger-crawl', (req, res) =>
+    handleRequest(req, res, 'CRAWL', CrawlTrigger)
+);
 
-    let context;
+router.post('/post_group', (req, res) =>
+    handleRequest(req, res, 'POST_GROUP', PostGroupTrigger)
+);
 
-    logStart(requestId, 'POST_TWEET', dto);
-
-    try {
-
-        console.log(`[${requestId}] 🌐 Creating Twitter context...`);
-
-        const resultFactory = await ContextFactory.create({
-            ...dto,
-            type: dto.type
-        });
-
-        context = resultFactory.context;
-
-        console.log(`[${requestId}] ✅ Context created`);
-
-        const trigger = new PostTweetTrigger(resultFactory.social);
-
-        console.log(`[${requestId}] 🐦 Executing PostTweetTrigger...`);
-        await trigger.execute(dto);
-
-        res.json({ success: true });
-
-        logEnd(requestId, Date.now() - startTime);
-
-    } catch (err) {
-
-        logError(requestId, err, Date.now() - startTime);
-        res.status(500).json({ success: false, error: err.message });
-
-    } finally {
-
-        if (context) {
-            console.log(`[${requestId}] 🔒 Closing browser context`);
-            await context.close();
-        }
-    }
-});
+router.post('/post_tweet', (req, res) =>
+    handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)
+);
 
 export default router;

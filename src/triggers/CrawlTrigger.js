@@ -7,11 +7,14 @@ export class CrawlTrigger {
         this.social = social;
     }
 
-    async execute(dto) {
+    async execute(dto, page) {
+
+        if (!page) {
+            throw new Error("CrawlTrigger requires an event page");
+        }
 
         const { id, source } = dto;
         const jobId = id || `JOB_${Date.now()}`;
-
         const startTime = Date.now();
 
         console.log(`[${jobId}] =============================`);
@@ -27,7 +30,7 @@ export class CrawlTrigger {
             console.log(`[${jobId}] 🔍 Crawling images...`);
 
             const { images, newLastUrl } =
-                await this.social.crawl(dto);
+                await this.social.crawl(dto, page);   // ✅ FIXED
 
             console.log(
                 `[${jobId}] ✅ Crawl done. Found ${images.length} images`
@@ -52,9 +55,7 @@ export class CrawlTrigger {
             const buffer =
                 await ExcelService.buildExcel(images, source);
 
-            console.log(
-                `[${jobId}] ✅ Excel created success`
-            );
+            console.log(`[${jobId}] ✅ Excel created success`);
 
             // =====================
             // 3. UPLOAD FILE

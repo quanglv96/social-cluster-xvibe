@@ -1,30 +1,17 @@
-// core/browser/ContextFactory.js
-
-import { BrowserManager } from './BrowserManager.js';
-import {SocialFactory} from "../factory/SocialFactory.js";
+import { SessionManager } from '../session/SessionManager.js';
+import { SocialFactory } from "../factory/SocialFactory.js";
 
 export class ContextFactory {
 
     static async create(dto) {
 
-        const browser = await BrowserManager.getBrowser();
+        // Lấy session đang sống (hoặc tự tạo nếu chưa có / hết hạn)
+        const { context } = await SessionManager.getSession();
 
-        const context = await browser.newContext({
-            viewport: { width: 1280, height: 800 },
-            userAgent:
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-            locale: 'en-US',
-            timezoneId: 'Asia/Ho_Chi_Minh'
-        });
-
-        await context.addInitScript(() => {
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => false
-            });
-        });
-
+        // Tạo social theo type (giữ nguyên logic cũ)
         const social = SocialFactory.create(dto.type, context);
 
+        // Authenticate vẫn giữ nguyên behavior cũ
         await social.authenticate(dto);
 
         return { context, social };

@@ -16,11 +16,11 @@ export class FacebookSocial extends BaseSocial {
         await this.auth.authenticate(this.context, dto);
     }
 
-    async crawl(dto) {
-        return await this.crawler.crawl(dto);
+    async crawl(dto, page) {
+        return await this.crawler.crawl(dto ,page);
     }
 
-    async postGroupAction(dto) {
-        return await this.postGroup.post(dto);
+    async postGroupAction(dto, page) {
+        return await this.postGroup.post(dto , page);
     }
 }
