@@ -1,4 +1,4 @@
-import { BrowserManager } from '../browser/BrowserManager.js';
+import {BrowserManager} from '../browser/BrowserManager.js';
 import {XvibeNavigator} from "../social/XvibeNavigator.js";
 import {config} from "../../config/config.js";
 
@@ -30,22 +30,26 @@ export class SessionManager {
             rootPage: this.rootPage
         };
     }
-    static async #gotoRoot() {
 
+    static async #gotoRoot() {
+        console.log("[SessionManager] Navigating to root URL:", config.rootUrl);
         await this.rootPage.goto(`${config.rootUrl}`, {
             waitUntil: 'domcontentloaded'
         });
     }
+
     /**
      * Tạo page cho event (post, crawl, ...)
      * Page lifecycle sẽ được caller quản lý
      */
     static async createEventPage() {
-        const { context } = await this.getSession();
+        const {context} = await this.getSession();
         return await context.newPage();
     }
+
     static hasEvent = false;
     static navigator = null;
+
     /**
      * Đóng event page và restore root
      */
@@ -114,7 +118,7 @@ export class SessionManager {
         const browser = await BrowserManager.getBrowser();
 
         this.context = await browser.newContext({
-            viewport: { width: 1280, height: 800 },
+            viewport: {width: 1280, height: 800},
             userAgent:
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
             locale: 'en-US',
@@ -185,6 +189,7 @@ export class SessionManager {
     static #random(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
     }
+
     static status = 'running'; // running | sleeping
 
     static async sleep() {
