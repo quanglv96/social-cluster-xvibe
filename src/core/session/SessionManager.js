@@ -32,7 +32,7 @@ export class SessionManager {
     }
     static async #gotoRoot() {
 
-        await this.rootPage.goto(config.rootUrl, {
+        await this.rootPage.goto(`${config.rootUrl}`, {
             waitUntil: 'domcontentloaded'
         });
     }
