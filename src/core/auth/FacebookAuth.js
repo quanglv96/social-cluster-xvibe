@@ -62,8 +62,8 @@ export class FacebookAuth extends BaseAuth {
                     }
 
                     // Sau khi nhập password xong
-                    await page.keyboard.press('Tab');
-                    await page.keyboard.press('Tab');
+                    // await page.keyboard.press('Tab');
+                    // await page.keyboard.press('Tab');
                     await page.keyboard.press('Enter');
 
                 } else {
@@ -79,8 +79,8 @@ export class FacebookAuth extends BaseAuth {
                     }
 
                     // Sau khi nhập password xong
-                    await page.keyboard.press('Tab');
-                    await page.keyboard.press('Tab');
+                    // await page.keyboard.press('Tab');
+                    // await page.keyboard.press('Tab');
                     await page.keyboard.press('Enter');
                 }
 

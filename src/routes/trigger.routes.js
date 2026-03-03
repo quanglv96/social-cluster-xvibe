@@ -30,7 +30,7 @@ function logError(requestId, err, duration) {
 async function handleRequest(req, res, actionName, TriggerClass) {
 
     const dto = req.body;
-    const requestId = dto.id || `REQ_${Date.now()}`;
+    const requestId = `REQ_${Date.now()}`;
     const startTime = Date.now();
 
     logStart(requestId, actionName, dto);
