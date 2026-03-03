@@ -15,6 +15,7 @@ export const config = {
     apiImportImage: process.env.API_IMPORT_IMAGE,
     apiUpdatePage: process.env.API_UPDATE_PAGE,
     updateCookie: process.env.API_UPDATE_COOKIE,
+    apiLogError: process.env.API_LOG_ERROR,
 
     // =============================
     // Crawl settings

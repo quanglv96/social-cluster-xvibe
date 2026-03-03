@@ -5,6 +5,7 @@ import { PostGroupTrigger } from '../triggers/PostGroupTrigger.js';
 import { PostTweetTrigger } from '../triggers/PostTweetTrigger.js';
 import { ContextFactory } from '../core/browser/ContextFactory.js';
 import {PostStoryTrigger} from "../triggers/PostStoryTrigger.js";
+import {config} from "../config/config.js";
 
 const router = express.Router();
 
@@ -69,8 +70,30 @@ async function handleRequest(req, res, actionName, TriggerClass) {
 
     } catch (err) {
 
-        logError(requestId, err, Date.now() - startTime);
-        res.status(500).json({ success: false, error: err.message });
+        const duration = Date.now() - startTime;
+
+        logError(requestId, err, duration);
+
+        // 🔥 Nếu có event page thì đóng ngay
+        if (page) {
+            try {
+                await SessionManager.closeEventPage(page);
+                page = null; // tránh finally đóng lại
+            } catch (closeErr) {
+                console.error(`[${requestId}] Cannot close event page:`, closeErr.message);
+            }
+        }
+
+        // 🔥 Gửi log về API
+        await sendErrorLog({
+            type: dto?.type,
+            error_message: err.message
+        });
+
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
 
     } finally {
 
@@ -81,7 +104,17 @@ async function handleRequest(req, res, actionName, TriggerClass) {
         SessionManager.hasEvent = false;
     }
 }
-
+async function sendErrorLog(payload) {
+    try {
+        await fetch(`${config.apiLogError}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    } catch (e) {
+        console.error('❌ Cannot send log to API:', e.message);
+    }
+}
 /* ===============================
    ROUTES
 ================================ */
