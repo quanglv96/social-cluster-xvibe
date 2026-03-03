@@ -53,7 +53,6 @@ export class FacebookCrawler {
             let newLastUrl = last_image;
 
             const MAX_IMAGES = config.maxImages;
-
             while (images.length < MAX_IMAGES) {
 
                 console.log(
@@ -62,16 +61,29 @@ export class FacebookCrawler {
 
                 const imageData = await page.evaluate(() => {
 
-                    const img =
-                        document.querySelector('div[role="dialog"] img') ||
-                        document.querySelector('img');
+                    const imgs = Array.from(document.querySelectorAll('img'));
 
-                    if (!img) return null;
+                    const validImg = imgs.find(img => {
+                        if (!img.src) return false;
+
+                        // ❌ bỏ SVG hoặc data
+                        if (img.src.startsWith('data:image')) return false;
+
+                        // ❌ bỏ ảnh nhỏ
+                        if (img.naturalWidth < 400) return false;
+
+                        // ✅ Facebook CDN
+                        if (!img.src.includes('scontent')) return false;
+
+                        return true;
+                    });
+
+                    if (!validImg) return null;
 
                     return {
-                        url: img.src,
-                        width: img.naturalWidth,
-                        height: img.naturalHeight
+                        url: validImg.src,
+                        width: validImg.naturalWidth,
+                        height: validImg.naturalHeight
                     };
                 });
 
