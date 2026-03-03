@@ -107,7 +107,7 @@ export class FacebookPostStory {
 
             await this.uploadStoryByDrop(page, filePaths[i]);
             if (mode === 'page') {
-                await this.addLinkButton(page, config.rootUrl);
+                await this.addLinkButton(page, 'https://xvibe.me');
             }
             await this.shareStory(page);
 
