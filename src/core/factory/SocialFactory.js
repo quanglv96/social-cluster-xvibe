@@ -9,11 +9,13 @@ export class SocialFactory {
         switch (type) {
 
             case 'POST_GROUP_FB':
+            case 'POST_STORY':
             case 'CRAWLS_FB':
                 return new FacebookSocial(context);
 
             case 'POST_TWITTER':
                 return new TwitterSocial(context);
+
             case 'XVIBE_FLOW':
                 return new XvibeSocial(context);
             default:

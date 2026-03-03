@@ -4,6 +4,7 @@ import { CrawlTrigger } from '../triggers/CrawlTrigger.js';
 import { PostGroupTrigger } from '../triggers/PostGroupTrigger.js';
 import { PostTweetTrigger } from '../triggers/PostTweetTrigger.js';
 import { ContextFactory } from '../core/browser/ContextFactory.js';
+import {PostStoryTrigger} from "../triggers/PostStoryTrigger.js";
 
 const router = express.Router();
 
@@ -91,6 +92,9 @@ router.post('/trigger-crawl', (req, res) =>
 
 router.post('/post_group', (req, res) =>
     handleRequest(req, res, 'POST_GROUP', PostGroupTrigger)
+);
+router.post('/post-story', (req, res) =>
+    handleRequest(req, res, 'POST_STORY', PostStoryTrigger)
 );
 
 router.post('/post_tweet', (req, res) =>
