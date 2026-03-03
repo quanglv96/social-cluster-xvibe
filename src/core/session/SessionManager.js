@@ -164,18 +164,21 @@ export class SessionManager {
 
         try {
             await this.rootPage.bringToFront();
-            // XÓA sessionStorage trước khi reload
+
+            // 🔥 Nếu không ở root domain → goto lại
+            if (!this.rootPage.url().includes('xvibe.me')) {
+                await this.#gotoRoot();
+            }
+
+            // 🔥 Đảm bảo đang ở root xong mới tiếp tục
+            await this.rootPage.waitForTimeout(1000);
+
+            // 🔥 Clear sessionStorage
             await this.rootPage.evaluate(() => {
                 sessionStorage.clear();
             });
 
-            // Nếu không còn ở domain → goto lại
-            if (!this.rootPage.url().includes('xvibe.me')) {
-                await this.#gotoRoot();
-                return;
-            }
-
-            // Nếu vẫn ở xvibe → reload sạch state
+            // 🔥 Reload lại page
             await this.rootPage.reload({
                 waitUntil: 'domcontentloaded'
             });
