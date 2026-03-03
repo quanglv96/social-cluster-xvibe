@@ -16,6 +16,7 @@ export const config = {
     apiUpdatePage: process.env.API_UPDATE_PAGE,
     updateCookie: process.env.API_UPDATE_COOKIE,
     apiLogError: process.env.API_LOG_ERROR,
+    rootUrl: process.env.ROOT_URL,
 
     // =============================
     // Crawl settings

@@ -1,5 +1,6 @@
 import { BrowserManager } from '../browser/BrowserManager.js';
 import {XvibeNavigator} from "../social/XvibeNavigator.js";
+import {config} from "../../config/config.js";
 
 export class SessionManager {
 
@@ -31,7 +32,7 @@ export class SessionManager {
     }
     static async #gotoRoot() {
 
-        await this.rootPage.goto('https://xvibe.me', {
+        await this.rootPage.goto(config.rootUrl, {
             waitUntil: 'domcontentloaded'
         });
     }
@@ -166,7 +167,7 @@ export class SessionManager {
             });
 
             // Nếu không còn ở domain → goto lại
-            if (!this.rootPage.url().includes('xvibe.me')) {
+            if (!this.rootPage.url().includes(`${config.rootUrl}`)) {
                 await this.#gotoRoot();
                 return;
             }

@@ -79,6 +79,7 @@ async function handleRequest(req, res, actionName, TriggerClass) {
             try {
                 await SessionManager.closeEventPage(page);
                 page = null; // tránh finally đóng lại
+                console.error(`[${requestId}] Close event page success`);
             } catch (closeErr) {
                 console.error(`[${requestId}] Cannot close event page:`, closeErr.message);
             }
@@ -106,6 +107,8 @@ async function handleRequest(req, res, actionName, TriggerClass) {
 }
 async function sendErrorLog(payload) {
     try {
+        console.error('Send log to API:', payload);
+        console.error('Send log to API:', config.apiLogError);
         await fetch(`${config.apiLogError}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
