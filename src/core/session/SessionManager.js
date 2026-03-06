@@ -32,7 +32,7 @@ export class SessionManager {
     }
 
     static async #gotoRoot() {
-        await this.rootPage.goto('https://xvibe.me', {
+        await this.rootPage.goto(`${config.rootUrl}`, {
             waitUntil: 'domcontentloaded'
         });
     }
@@ -166,7 +166,7 @@ export class SessionManager {
             await this.rootPage.bringToFront();
 
             // 🔥 Nếu không ở root domain → goto lại
-            if (!this.rootPage.url().includes('xvibe.me')) {
+            if (!this.rootPage.url().includes(`${config.rootUrl}`)) {
                 await this.#gotoRoot();
             }
 

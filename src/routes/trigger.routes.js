@@ -32,16 +32,13 @@ function logError(requestId, err, duration) {
 async function handleRequest(req, res, actionName, TriggerClass) {
 
     const dto = req.body;
+    console.log("Body request:", dto);
     const requestId = `REQ_${Date.now()}`;
     const startTime = Date.now();
-
-    logStart(requestId, actionName, dto);
-
     let page;
     let rootPage;
-
     try {
-
+        logStart(requestId, actionName, dto);
         // Always ensure session
         const session = await SessionManager.getSession();
         rootPage = session.rootPage;
@@ -73,7 +70,11 @@ async function handleRequest(req, res, actionName, TriggerClass) {
         const duration = Date.now() - startTime;
 
         logError(requestId, err, duration);
-
+        // 🔥 Gửi log về API
+        await sendErrorLog({
+            type: dto?.type,
+            error_message: err.message
+        });
         // 🔥 Nếu có event page thì đóng ngay
         if (page) {
             try {
@@ -84,12 +85,6 @@ async function handleRequest(req, res, actionName, TriggerClass) {
                 console.error(`[${requestId}] Cannot close event page:`, closeErr.message);
             }
         }
-
-        // 🔥 Gửi log về API
-        await sendErrorLog({
-            type: dto?.type,
-            error_message: err.message
-        });
 
         res.status(500).json({
             success: false,
