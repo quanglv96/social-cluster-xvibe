@@ -26,6 +26,10 @@ export class FacebookSocial extends BaseSocial {
         return await this.postGroup.post(dto , page);
     }
 
+    async postProfileAction(dto, page) {
+        return await this.postGroup.postToProfile(dto , page);
+    }
+
     async postStoryAction(dto, page) {
         return await this.postStory.post(dto , page);
     }

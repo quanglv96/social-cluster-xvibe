@@ -211,6 +211,60 @@ export class FacebookPostGroup {
         }
     }
 
+    async postProfileTrigger({
+                   content,
+                   url_image: imageUrl,
+               }, page) {
+
+        if (!page) {
+            throw new Error("FacebookPostGroup requires an event page");
+        }
+
+        let imageFilePath = null;
+
+        try {
+
+            this.log('Start post process', {
+                hasImage: !!imageUrl
+            });
+
+            /**
+             * ===== DOWNLOAD IMAGE ONCE =====
+             */
+            if (imageUrl) {
+                this.log('Start downloading image', {url: imageUrl});
+                imageFilePath = await this.downloadImage(imageUrl);
+                this.log('Image downloaded successfully', {
+                    filePath: imageFilePath
+                });
+            }
+
+            /**
+             * ===== POST TO PROFILE FIRST =====
+             */
+            await page.goto('https://www.facebook.com/', {
+                waitUntil: 'domcontentloaded'
+            });
+
+            await this.delay.navigation('after goto home', page);
+
+            try {
+                await this.postToProfile(page, content, imageFilePath);
+            } catch (err) {
+                this.log('Profile post failed', {error: err.message});
+            }
+            this.log('Post process completed');
+
+        } finally {
+
+            if (imageFilePath && fs.existsSync(imageFilePath)) {
+                fs.unlinkSync(imageFilePath);
+                this.log('Temporary image deleted', {imageFilePath});
+            }
+
+        }
+    }
+
     async postToProfile(page, content, imageFilePath) {
 
         this.log('Start posting to PROFILE timeline');

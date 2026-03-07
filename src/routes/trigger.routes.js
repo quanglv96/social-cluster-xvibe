@@ -131,6 +131,9 @@ router.post('/post-story', (req, res) =>
 router.post('/post_tweet', (req, res) =>
     handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)
 );
+router.post('/post-profile', (req, res) =>
+    handleRequest(req, res, 'POST_PROFILE', PostGroupTrigger)
+);
 router.post('/', (req, res) =>
     handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)
 );
