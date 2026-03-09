@@ -6,6 +6,7 @@ import { PostTweetTrigger } from '../triggers/PostTweetTrigger.js';
 import { ContextFactory } from '../core/browser/ContextFactory.js';
 import {PostStoryTrigger} from "../triggers/PostStoryTrigger.js";
 import {config} from "../config/config.js";
+import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
 
 const router = express.Router();
 
@@ -98,6 +99,9 @@ async function handleRequest(req, res, actionName, TriggerClass) {
         }
         // 🔥 Sau khi event xong → cho root chạy lại
         SessionManager.hasEvent = false;
+        if (SessionManager.navigator) {
+            SessionManager.navigator.start();
+        }
     }
 }
 async function sendErrorLog(payload) {
@@ -132,7 +136,7 @@ router.post('/post_tweet', (req, res) =>
     handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)
 );
 router.post('/post-profile', (req, res) =>
-    handleRequest(req, res, 'POST_PROFILE', PostGroupTrigger)
+    handleRequest(req, res, 'POST_PROFILE', PostProfileTrigger)
 );
 router.post('/', (req, res) =>
     handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)

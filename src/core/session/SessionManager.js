@@ -66,17 +66,15 @@ export class SessionManager {
 
         await this.#restoreRoot();
 
-        // reset event state
         this.hasEvent = false;
 
-        if (this.rootPage && !this.rootPage.isClosed()) {
+        if (!this.navigator && this.rootPage && !this.rootPage.isClosed()) {
 
             this.navigator = new XvibeNavigator(
                 this.rootPage,
-                async () => this.hasEvent // callback stop condition
+                async () => this.hasEvent
             );
 
-            // chạy nền không block Express
             this.navigator.start().catch(err =>
                 console.warn('[Navigator Error]', err.message)
             );

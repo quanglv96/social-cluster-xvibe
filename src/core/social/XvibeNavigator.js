@@ -16,7 +16,7 @@ export class XvibeNavigator {
     }
 
     async openVibe() {
-
+        await this.page.waitForTimeout(2000);
         await this.ensureReady();
 
         const vibeButton = this.page.locator(
