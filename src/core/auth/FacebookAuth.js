@@ -86,6 +86,8 @@ export class FacebookAuth extends BaseAuth {
 
                 await page.waitForTimeout(8000);
 
+                await this.handleFacebookDialogs(page);
+
                 if (await this.isLoggedIn(context)) {
                     loginSuccess = true;
                     break;
@@ -131,5 +133,41 @@ export class FacebookAuth extends BaseAuth {
                 ? Math.floor(c.expirationDate)
                 : undefined
         }));
+    }
+
+    async handleFacebookDialogs(page) {
+
+        const selectors = [
+            // button text
+            'span:has-text("Not now")',
+            'span:has-text("Không phải bây giờ")',
+            'span:has-text("Bỏ qua")',
+            'span:has-text("Skip")',
+            'span:has-text("Continue")',
+            'span:has-text("Tiếp tục")',
+
+            // icon X
+            'div[aria-label="Close"]',
+            'div[aria-label="Đóng"]',
+            '[role="button"][aria-label="Close"]',
+            '[role="button"][aria-label="Đóng"]',
+
+            // fallback cho dialog
+            'div[role="dialog"] [aria-label="Close"]'
+        ];
+
+        for (const selector of selectors) {
+            try {
+                const btn = page.locator(selector);
+
+                if (await btn.count() > 0 && await btn.first().isVisible()) {
+                    await btn.first().click();
+                    await page.waitForTimeout(1500);
+                    return true;
+                }
+            } catch {}
+        }
+
+        return false;
     }
 }
