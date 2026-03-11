@@ -4,13 +4,14 @@ import { FacebookCrawler } from './FacebookCrawler.js';
 import { FacebookPostGroup } from './FacebookPostGroup.js';
 import {FacebookPostStory} from "./FacebookPostStory.js";
 import {FacebookPostProfile} from "./FacebookPostProfile.js";
+import {TwitterCrawler} from "../twitter/TwitterCrawler.js";
 
 export class FacebookSocial extends BaseSocial {
 
     constructor(context) {
         super(context);
         this.auth = new FacebookAuth();
-        this.crawler = new FacebookCrawler(context);
+        this.fb_crawler = new FacebookCrawler(context);
         this.postGroup = new FacebookPostGroup(context);
         this.postProfile = new FacebookPostProfile(context);
         this.postStory = new FacebookPostStory(context);
@@ -20,8 +21,8 @@ export class FacebookSocial extends BaseSocial {
         await this.auth.authenticate(this.context, dto);
     }
 
-    async crawl(dto, page) {
-        return await this.crawler.crawl(dto ,page);
+    async fbCrawler(dto, page) {
+        return await this.fb_crawler.crawl(dto ,page);
     }
 
     async postGroupAction(dto, page) {

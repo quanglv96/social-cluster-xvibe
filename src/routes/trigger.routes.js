@@ -1,12 +1,13 @@
 import express from 'express';
 import { SessionManager } from '../core/session/SessionManager.js';
-import { CrawlTrigger } from '../triggers/CrawlTrigger.js';
+import { FbCrawlTrigger } from '../triggers/FbCrawlTrigger.js';
 import { PostGroupTrigger } from '../triggers/PostGroupTrigger.js';
 import { PostTweetTrigger } from '../triggers/PostTweetTrigger.js';
 import { ContextFactory } from '../core/browser/ContextFactory.js';
 import {PostStoryTrigger} from "../triggers/PostStoryTrigger.js";
 import {config} from "../config/config.js";
 import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
+import {TwCrawlTrigger} from "../triggers/TwCrawlTrigger.js";
 
 const router = express.Router();
 
@@ -121,8 +122,12 @@ async function sendErrorLog(payload) {
    ROUTES
 ================================ */
 
-router.post('/trigger-crawl', (req, res) =>
-    handleRequest(req, res, 'CRAWL', CrawlTrigger)
+router.post('/trigger-fb-crawl', (req, res) =>
+    handleRequest(req, res, 'FB_CRAWL', FbCrawlTrigger)
+);
+
+router.post('/trigger-tw-crawl', (req, res) =>
+    handleRequest(req, res, 'TW_CRAWL', TwCrawlTrigger)
 );
 
 router.post('/post_group', (req, res) =>

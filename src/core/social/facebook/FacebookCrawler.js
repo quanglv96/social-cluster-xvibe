@@ -9,7 +9,7 @@ export class FacebookCrawler {
     /**
      * page được truyền từ SessionManager (event tab)
      */
-    async crawl({ id, last_image }, page) {
+    async crawl({ id, last_image, source }, page) {
 
         if (!page) {
             throw new Error("FacebookCrawler requires an event page");

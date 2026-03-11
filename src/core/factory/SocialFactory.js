@@ -15,6 +15,7 @@ export class SocialFactory {
                 return new FacebookSocial(context);
 
             case 'POST_TWITTER':
+            case 'CRAWLS_TWITTER':
                 return new TwitterSocial(context);
 
             case 'XVIBE_FLOW':

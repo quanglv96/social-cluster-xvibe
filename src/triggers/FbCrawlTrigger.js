@@ -1,7 +1,7 @@
 import { ExcelService } from '../services/ExcelService.js';
 import { ApiService } from '../services/ApiService.js';
 
-export class CrawlTrigger {
+export class FbCrawlTrigger {
     static useEventPage = true;
     constructor(social) {
         this.social = social;
@@ -10,7 +10,7 @@ export class CrawlTrigger {
     async execute(dto, page) {
 
         if (!page) {
-            throw new Error("CrawlTrigger requires an event page");
+            throw new Error("FbCrawlTrigger requires an event page");
         }
 
         const { id, source } = dto;
@@ -30,7 +30,7 @@ export class CrawlTrigger {
             console.log(`[${jobId}] 🔍 Crawling images...`);
 
             const { images, newLastUrl } =
-                await this.social.crawl(dto, page);   // ✅ FIXED
+                await this.social.fbCrawler(dto, page);   // ✅ FIXED
 
             console.log(
                 `[${jobId}] ✅ Crawl done. Found ${images.length} images`

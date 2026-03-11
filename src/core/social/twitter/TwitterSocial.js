@@ -1,6 +1,7 @@
 import { BaseSocial } from '../BaseSocial.js';
 import { TwitterAuth } from '../../auth/TwitterAuth.js';
 import { TwitterPost } from './TwitterPost.js';
+import {TwitterCrawler} from "./TwitterCrawler.js";
 
 export class TwitterSocial extends BaseSocial {
 
@@ -8,6 +9,7 @@ export class TwitterSocial extends BaseSocial {
         super(context);
         this.auth = new TwitterAuth();
         this.postService = new TwitterPost(context);
+        this.tw_crawler = new TwitterCrawler(context);
     }
 
     async authenticate(dto) {
@@ -24,5 +26,10 @@ export class TwitterSocial extends BaseSocial {
         }
 
         return await this.postService.post(dto, page);
+    }
+
+
+    async twCrawler(dto, page) {
+        return await this.tw_crawler.crawl(dto ,page);
     }
 }
