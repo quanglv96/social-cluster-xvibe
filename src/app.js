@@ -82,10 +82,8 @@ process.on('SIGINT', () => shutdown('SIGINT (Ctrl+C)'));
 
 process.on('uncaughtException', (err) => {
     console.error('💥 Uncaught Exception');
-    shutdown('uncaughtException', err);
 });
 
 process.on('unhandledRejection', (reason) => {
     console.error('💥 Unhandled Rejection');
-    shutdown('unhandledRejection', reason);
 });
