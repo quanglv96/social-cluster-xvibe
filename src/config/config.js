@@ -21,7 +21,7 @@ export const config = {
     // =============================
     // Crawl settings
     // =============================
-    maxImages: parseInt(process.env.MAX_IMAGES || '10'),
+    maxImages: parseInt( '100'),
 
     // =============================
     // Timeouts
