@@ -14,7 +14,6 @@ const router = express.Router();
 let ACTIVE_REQUESTS = 0;
 let EVENT_PAGE_SEQ = 0;
 let QUEUE_SIZE = 0;
-let queue = Promise.resolve();
 
 function nowIso() {
     return new Date().toISOString();
@@ -85,12 +84,48 @@ async function measure(requestId, startTime, label, fn) {
     }
 }
 
+/* ===============================
+   SIMPLE FIFO QUEUE
+================================ */
+
+const queue = [];
+let processing = false;
+
+function enqueue(task) {
+    queue.push(task);
+    processQueue().catch((err) => {
+        console.error(`[${nowIso()}] [QUEUE] processQueue failed: ${err?.message || err}`);
+    });
+}
+
+async function processQueue() {
+    if (processing) return;
+
+    processing = true;
+
+    try {
+        while (queue.length > 0) {
+            const task = queue.shift();
+            try {
+                await task();
+            } catch (err) {
+                console.error(`[${nowIso()}] [QUEUE] task failed: ${err?.message || err}`);
+            } finally {
+                QUEUE_SIZE--;
+            }
+        }
+    } finally {
+        processing = false;
+    }
+}
+
 function enqueueRequest(req, res, actionName, TriggerClass) {
     const requestId = buildRequestId(actionName);
     const startTime = Date.now();
     const dto = req.body;
 
     QUEUE_SIZE++;
+
     console.log(`\n================================================================================`);
     trace(
         requestId,
@@ -100,34 +135,26 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
     );
     trace(requestId, startTime, 'REQ BODY', safeJson(dto));
 
-    const runTask = async () => {
+    enqueue(async () => {
         trace(
             requestId,
             startTime,
             '🎯 REQUEST DEQUEUED',
             `action=${actionName} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS}`
         );
-        await handleRequest(req, res, actionName, TriggerClass, requestId, startTime);
-    };
 
-    const taskPromise = queue.then(runTask);
-
-    queue = taskPromise.catch((err) => {
-        console.error(
-            `[${nowIso()}] [${requestId}] [${elapsed(startTime)}ms] QUEUE CHAIN ERROR | ${err?.message || err}`
-        );
-    }).finally(() => {
-        QUEUE_SIZE--;
-        trace(
-            requestId,
-            startTime,
-            '📤 REQUEST REMOVED FROM QUEUE',
-            `action=${actionName} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS}`
-        );
-        console.log(`================================================================================\n`);
+        try {
+            await handleRequest(req, res, actionName, TriggerClass, requestId, startTime);
+        } finally {
+            trace(
+                requestId,
+                startTime,
+                '📤 REQUEST REMOVED FROM QUEUE',
+                `action=${actionName} queueSize=${Math.max(QUEUE_SIZE - 1, 0)} activeRequests=${ACTIVE_REQUESTS}`
+            );
+            console.log(`================================================================================\n`);
+        }
     });
-
-    return taskPromise;
 }
 
 /* ===============================
