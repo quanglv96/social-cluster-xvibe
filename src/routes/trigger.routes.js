@@ -368,12 +368,43 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
         }
 
         if (SessionManager.navigator) {
-            try {
-                await measure(requestId, startTime, 'SessionManager.navigator.start()', async () => {
-                    return await SessionManager.navigator.start();
-                });
-            } catch (err) {
-                traceError(requestId, startTime, 'navigator.start FAILED', err);
+
+            trace(
+                requestId,
+                startTime,
+                'TRY START navigator (idle mode)',
+                `activeRequests=${ACTIVE_REQUESTS} queueSize=${queue.length}`
+            );
+            const nextActive = ACTIVE_REQUESTS - 1;
+
+            if (nextActive === 0 && queue.length === 0){
+                trace(
+                    requestId,
+                    startTime,
+                    'START navigator in background',
+                    `non-blocking`
+                );
+                setTimeout(() => {
+                    const navStart = Date.now();
+                    SessionManager.navigator.start()
+                        .then(() => {
+                            console.log(
+                                `[${nowIso()}] [NAVIGATOR] start finished request=${requestId} duration=${Date.now() - navStart}ms`
+                            );
+                        })
+                        .catch(err => {
+                            console.error(
+                                `[${nowIso()}] [NAVIGATOR] start failed: ${err.message}`
+                            );
+                        });
+                }, 0);
+            } else {
+                trace(
+                    requestId,
+                    startTime,
+                    'SKIP navigator.start()',
+                    `system not idle activeRequests=${ACTIVE_REQUESTS} queueSize=${queue.length}`
+                );
             }
         } else {
             trace(requestId, startTime, `SKIP navigator.start()`, `navigator is null`);
