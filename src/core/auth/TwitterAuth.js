@@ -1,4 +1,4 @@
-import { BaseAuth } from './BaseAuth.js';
+import {BaseAuth} from './BaseAuth.js';
 import axios from "axios";
 import {config} from "../../config/config.js";
 
@@ -14,8 +14,8 @@ export class TwitterAuth extends BaseAuth {
 
     async humanType(page, selector, text) {
         const locator = page.locator(selector);
-        await locator.waitFor({ state: 'visible', timeout: 30000 });
-        await locator.click({ delay: 200 });
+        await locator.waitFor({state: 'visible', timeout: 30000});
+        await locator.click({delay: 200});
         await this.sleep(400);
 
         // Clear old value
@@ -49,7 +49,7 @@ export class TwitterAuth extends BaseAuth {
                 this.log(`🧹 Clearing username input...`);
                 const usernameInput = page.locator('input[name="text"]');
 
-                await usernameInput.waitFor({ state: 'visible', timeout: 10000 });
+                await usernameInput.waitFor({state: 'visible', timeout: 10000});
 
                 // ✅ Human click vào input
                 await this.humanClick(page, 'input[name="text"]');
@@ -71,71 +71,76 @@ export class TwitterAuth extends BaseAuth {
                 if (typedValue !== username) {
                     throw new Error(`Value mismatch: expected "${username}", got "${typedValue}"`);
                 }
+                if (attempt === 2) {
+                    this.log(`👆 attempt 2-> enter`);
+                    await page.keyboard.press('Enter');
+                } else {
+                    // ✅ Click ra ngoài với human movement
+                    this.log(`👆 Clicking outside to trigger validation...`);
 
-                // ✅ Click ra ngoài với human movement
-                this.log(`👆 Clicking outside to trigger validation...`);
 
-                // Di chuyển chuột đến vùng trống và click
-                const box = await usernameInput.boundingBox();
-                const outsideX = box.x + box.width + 50;
-                const outsideY = box.y + 50;
+                    // Di chuyển chuột đến vùng trống và click
+                    const box = await usernameInput.boundingBox();
+                    const outsideX = box.x + box.width + 50;
+                    const outsideY = box.y + 50;
 
-                await page.mouse.move(outsideX, outsideY, { steps: 20 });
-                await this.sleep(200);
-                await page.mouse.click(outsideX, outsideY);
+                    await page.mouse.move(outsideX, outsideY, {steps: 20});
+                    await this.sleep(200);
+                    await page.mouse.click(outsideX, outsideY);
 
-                await this.sleep(1500);
-                this.log(`✅ Blur triggered`);
+                    await this.sleep(1500);
+                    this.log(`✅ Blur triggered`);
 
-                // Verify lại value sau blur
-                const valueAfterBlur = await usernameInput.inputValue();
-                this.log(`📝 Value after blur: "${valueAfterBlur}"`);
+                    // Verify lại value sau blur
+                    const valueAfterBlur = await usernameInput.inputValue();
+                    this.log(`📝 Value after blur: "${valueAfterBlur}"`);
 
-                if (valueAfterBlur !== username) {
-                    throw new Error(`Username changed after blur: "${valueAfterBlur}"`);
+                    if (valueAfterBlur !== username) {
+                        throw new Error(`Username changed after blur: "${valueAfterBlur}"`);
+                    }
+
+                    this.log(`➡️ Clicking NEXT button...`);
+
+                    // ✅ FIX: Dùng role="button" hoặc .first()
+                    // Cách 1: Dùng button role (tốt nhất)
+                    const nextButton = page.getByRole('button', {name: 'Next'}).first();
+                    await nextButton.waitFor({state: 'visible', timeout: 10000});
+
+                    const nextBox = await nextButton.boundingBox();
+                    if (!nextBox) {
+                        throw new Error('Cannot get Next button position');
+                    }
+
+                    const nextX = nextBox.x + nextBox.width * (0.3 + Math.random() * 0.4);
+                    const nextY = nextBox.y + nextBox.height * (0.3 + Math.random() * 0.4);
+
+                    this.log(`🖱️ Moving to Next button (${Math.round(nextX)}, ${Math.round(nextY)})`);
+
+                    // Get current mouse position
+                    const currentPos = await page.evaluate(() => {
+                        return {x: window.mouseX || 0, y: window.mouseY || 0};
+                    });
+
+                    await this.moveMouseHumanLike(page, currentPos.x, currentPos.y, nextX, nextY);
+                    await this.sleep(100 + Math.random() * 200);
+                    await page.mouse.click(nextX, nextY);
+
+                    // Track mouse position
+                    await page.evaluate(({x, y}) => {
+                        window.mouseX = x;
+                        window.mouseY = y;
+                    }, {x: nextX, y: nextY});
+
+                    this.log(`✅ Next button clicked`);
+
+                    this.log(`⏳ Waiting for next state (10s timeout)...`);
+                    await this.sleep(2000);
                 }
-
-                this.log(`➡️ Clicking NEXT button...`);
-
-                // ✅ FIX: Dùng role="button" hoặc .first()
-                // Cách 1: Dùng button role (tốt nhất)
-                const nextButton = page.getByRole('button', { name: 'Next' }).first();
-                await nextButton.waitFor({ state: 'visible', timeout: 10000 });
-
-                const nextBox = await nextButton.boundingBox();
-                if (!nextBox) {
-                    throw new Error('Cannot get Next button position');
-                }
-
-                const nextX = nextBox.x + nextBox.width * (0.3 + Math.random() * 0.4);
-                const nextY = nextBox.y + nextBox.height * (0.3 + Math.random() * 0.4);
-
-                this.log(`🖱️ Moving to Next button (${Math.round(nextX)}, ${Math.round(nextY)})`);
-
-                // Get current mouse position
-                const currentPos = await page.evaluate(() => {
-                    return { x: window.mouseX || 0, y: window.mouseY || 0 };
-                });
-
-                await this.moveMouseHumanLike(page, currentPos.x, currentPos.y, nextX, nextY);
-                await this.sleep(100 + Math.random() * 200);
-                await page.mouse.click(nextX, nextY);
-
-                // Track mouse position
-                await page.evaluate(({ x, y }) => {
-                    window.mouseX = x;
-                    window.mouseY = y;
-                }, { x: nextX, y: nextY });
-
-                this.log(`✅ Next button clicked`);
-
-                this.log(`⏳ Waiting for next state (10s timeout)...`);
-                await this.sleep(2000);
 
                 const result = await Promise.race([
-                    page.waitForSelector('input[name="password"]', { timeout: 10000 }).then(() => 'PASSWORD'),
-                    page.waitForSelector('input[name="text"]', { timeout: 10000 }).then(() => 'USERNAME_AGAIN'),
-                    page.waitForSelector('input[data-testid="ocfEnterTextTextInput"]', { timeout: 10000 }).then(() => 'PHONE_VERIFICATION')
+                    page.waitForSelector('input[name="password"]', {timeout: 10000}).then(() => 'PASSWORD'),
+                    page.waitForSelector('input[name="text"]', {timeout: 10000}).then(() => 'USERNAME_AGAIN'),
+                    page.waitForSelector('input[data-testid="ocfEnterTextTextInput"]', {timeout: 10000}).then(() => 'PHONE_VERIFICATION')
                 ]);
 
                 this.log(`🎯 Detected state: ${result}`);
@@ -171,6 +176,7 @@ export class TwitterAuth extends BaseAuth {
 
         throw new Error(`❌ Username input failed after ${maxRetry} attempts`);
     }
+
     async moveMouseHumanLike(page, fromX, fromY, toX, toY) {
         const steps = 20 + Math.floor(Math.random() * 10); // 20-30 steps
 
@@ -191,7 +197,7 @@ export class TwitterAuth extends BaseAuth {
         this.log(`🖱️ Human-like click: ${selector}`);
 
         const element = page.locator(selector);
-        await element.waitFor({ state: 'visible', timeout: 10000 });
+        await element.waitFor({state: 'visible', timeout: 10000});
 
         // Lấy vị trí element
         const box = await element.boundingBox();
@@ -206,7 +212,7 @@ export class TwitterAuth extends BaseAuth {
 
         // Di chuyển chuột từ vị trí hiện tại đến target
         const currentPos = await page.evaluate(() => {
-            return { x: window.mouseX || 0, y: window.mouseY || 0 };
+            return {x: window.mouseX || 0, y: window.mouseY || 0};
         });
 
         this.log(`🖱️ Moving from (${Math.round(currentPos.x)}, ${Math.round(currentPos.y)}) to (${Math.round(targetX)}, ${Math.round(targetY)})`);
@@ -220,17 +226,17 @@ export class TwitterAuth extends BaseAuth {
         await page.mouse.click(targetX, targetY);
 
         // ✅ FIX: Track vị trí chuột - wrap arguments trong object
-        await page.evaluate(({ x, y }) => {
+        await page.evaluate(({x, y}) => {
             window.mouseX = x;
             window.mouseY = y;
-        }, { x: targetX, y: targetY });
+        }, {x: targetX, y: targetY});
 
         this.log(`✅ Clicked at (${Math.round(targetX)}, ${Math.round(targetY)})`);
     }
 
     async authenticate(context, dto) {
 
-        const { cookie, user_name, password } = dto;
+        const {cookie, user_name, password} = dto;
 
         const page = await context.newPage();
         let loggedIn = false;
@@ -279,7 +285,7 @@ export class TwitterAuth extends BaseAuth {
 
             try {
                 // Fix: dùng domcontentloaded thay vì networkidle
-                await page.goto('https://x.com/i/flow/login', {
+                await page.goto('https://x.com/login', {
                     waitUntil: 'domcontentloaded', // ✅ Thay đổi này
                     timeout: 30000
                 });
@@ -287,7 +293,7 @@ export class TwitterAuth extends BaseAuth {
                 this.log('✅ Page loaded');
 
                 // Đợi input xuất hiện (chắc chắn DOM ready)
-                await page.waitForSelector('input[name="text"]', { timeout: 10000 });
+                await page.waitForSelector('input[name="text"]', {timeout: 10000});
 
                 this.log('✅ Login form ready');
 
@@ -296,11 +302,11 @@ export class TwitterAuth extends BaseAuth {
 
                 // Fallback: thử load lại không chờ networkidle
                 this.log('🔄 Trying fallback load...');
-                await page.goto('https://x.com/i/flow/login', {
+                await page.goto('https://x.com/login', {
                     timeout: 30000
                 });
 
-                await page.waitForSelector('input[name="text"]', { timeout: 15000 });
+                await page.waitForSelector('input[name="text"]', {timeout: 15000});
             }
 
             await this.sleep(3000);
@@ -330,9 +336,9 @@ export class TwitterAuth extends BaseAuth {
             // ✅ FIX: Dùng getByRole hoặc text chính xác
             try {
                 // Thử tìm button "Log in" hoặc "Đăng nhập"
-                const loginButton = page.getByRole('button', { name: /Log in|Đăng nhập/i }).first();
+                const loginButton = page.getByRole('button', {name: /Log in|Đăng nhập/i}).first();
 
-                await loginButton.waitFor({ state: 'visible', timeout: 10000 });
+                await loginButton.waitFor({state: 'visible', timeout: 10000});
 
                 this.log('✅ Login button found');
 
@@ -350,7 +356,7 @@ export class TwitterAuth extends BaseAuth {
 
                 // Get current mouse position
                 const currentPos = await page.evaluate(() => {
-                    return { x: window.mouseX || 0, y: window.mouseY || 0 };
+                    return {x: window.mouseX || 0, y: window.mouseY || 0};
                 });
 
                 await this.moveMouseHumanLike(page, currentPos.x, currentPos.y, loginX, loginY);
@@ -358,10 +364,10 @@ export class TwitterAuth extends BaseAuth {
                 await page.mouse.click(loginX, loginY);
 
                 // Track mouse position
-                await page.evaluate(({ x, y }) => {
+                await page.evaluate(({x, y}) => {
                     window.mouseX = x;
                     window.mouseY = y;
-                }, { x: loginX, y: loginY });
+                }, {x: loginX, y: loginY});
 
                 this.log('✅ Login button clicked');
 
@@ -370,8 +376,8 @@ export class TwitterAuth extends BaseAuth {
 
                 // Fallback: dùng span text
                 const loginSpan = page.locator('span:has-text("Log in"), span:has-text("Đăng nhập")').first();
-                await loginSpan.waitFor({ state: 'visible', timeout: 10000 });
-                await loginSpan.click({ delay: 200 });
+                await loginSpan.waitFor({state: 'visible', timeout: 10000});
+                await loginSpan.click({delay: 200});
 
                 this.log('✅ Login button clicked (fallback method)');
             }

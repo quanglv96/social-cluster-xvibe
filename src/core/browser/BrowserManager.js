@@ -40,8 +40,12 @@ export class BrowserManager {
 
         const instance = await chromium.launch({
             headless: config.headless,
+            channel: 'chrome',
             args: [
-                '--disable-blink-features=AutomationControlled'
+                '--disable-blink-features=AutomationControlled',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage'
             ]
         });
 
