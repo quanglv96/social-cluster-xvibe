@@ -63,7 +63,7 @@ async function handleRequest(req, res, actionName, TriggerClass) {
         // Truyền page nếu có, không thì truyền root
         await trigger.execute(dto, page || rootPage);
 
-        res.json({ success: true });
+        res.json({success: true});
 
         logEnd(requestId, Date.now() - startTime);
 
@@ -74,8 +74,7 @@ async function handleRequest(req, res, actionName, TriggerClass) {
         logError(requestId, err, duration);
         // 🔥 Gửi log về API
         await sendErrorLog({
-            type: dto?.type,
-            error_message: err.message
+            type: dto?.type, error_message: err.message
         });
         // 🔥 Nếu có event page thì đóng ngay
         if (page) {
@@ -89,8 +88,7 @@ async function handleRequest(req, res, actionName, TriggerClass) {
         }
 
         res.status(500).json({
-            success: false,
-            error: err.message
+            success: false, error: err.message
         });
 
     } finally {

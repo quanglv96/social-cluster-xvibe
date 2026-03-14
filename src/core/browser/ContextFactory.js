@@ -1,5 +1,5 @@
-import { SessionManager } from '../session/SessionManager.js';
-import { SocialFactory } from "../factory/SocialFactory.js";
+import {SessionManager} from '../session/SessionManager.js';
+import {SocialFactory} from "../factory/SocialFactory.js";
 
 export class ContextFactory {
 

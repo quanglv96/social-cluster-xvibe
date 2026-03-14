@@ -184,14 +184,12 @@ export class FacebookPostStory {
     }
 
     async openCreateStoryProfile(page) {
-
-        // 🔥 click theo text chính xác
-        const createBtn = page.locator(
-            'span:has-text("Tạo tin"), span:has-text("Create story")'
+        const createStoryLink = page.locator(
+            'a[href="/stories/create/"], a[aria-label="Tạo tin"], a[aria-label="Create story"]'
         ).first();
 
-        await createBtn.waitFor({ timeout: 15000 });
-        await createBtn.click();
+        await createStoryLink.waitFor({ state: 'visible', timeout: 15000 });
+        await createStoryLink.click();
 
         await this.delay.action('after click create story', page);
         await this.delay.action('after click image story option', page);
