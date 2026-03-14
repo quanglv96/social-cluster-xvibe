@@ -13,6 +13,8 @@ const router = express.Router();
 
 let ACTIVE_REQUESTS = 0;
 let EVENT_PAGE_SEQ = 0;
+let QUEUE_SIZE = 0;
+let queue = Promise.resolve();
 
 function nowIso() {
     return new Date().toISOString();
@@ -83,13 +85,57 @@ async function measure(requestId, startTime, label, fn) {
     }
 }
 
+function enqueueRequest(req, res, actionName, TriggerClass) {
+    const requestId = buildRequestId(actionName);
+    const startTime = Date.now();
+    const dto = req.body;
+
+    QUEUE_SIZE++;
+    console.log(`\n================================================================================`);
+    trace(
+        requestId,
+        startTime,
+        '📥 REQUEST ENQUEUED',
+        `action=${actionName} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS} pid=${process.pid}`
+    );
+    trace(requestId, startTime, 'REQ BODY', safeJson(dto));
+
+    const runTask = async () => {
+        trace(
+            requestId,
+            startTime,
+            '🎯 REQUEST DEQUEUED',
+            `action=${actionName} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS}`
+        );
+        await handleRequest(req, res, actionName, TriggerClass, requestId, startTime);
+    };
+
+    const taskPromise = queue.then(runTask);
+
+    queue = taskPromise.catch((err) => {
+        console.error(
+            `[${nowIso()}] [${requestId}] [${elapsed(startTime)}ms] QUEUE CHAIN ERROR | ${err?.message || err}`
+        );
+    }).finally(() => {
+        QUEUE_SIZE--;
+        trace(
+            requestId,
+            startTime,
+            '📤 REQUEST REMOVED FROM QUEUE',
+            `action=${actionName} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS}`
+        );
+        console.log(`================================================================================\n`);
+    });
+
+    return taskPromise;
+}
+
 /* ===============================
    COMMON HANDLER TEMPLATE
 ================================ */
-async function handleRequest(req, res, actionName, TriggerClass) {
+
+async function handleRequest(req, res, actionName, TriggerClass, requestId, startTime) {
     const dto = req.body;
-    const requestId = buildRequestId(actionName);
-    const startTime = Date.now();
 
     let page;
     let rootPage;
@@ -98,14 +144,12 @@ async function handleRequest(req, res, actionName, TriggerClass) {
     let resultFactory;
 
     ACTIVE_REQUESTS++;
-    console.log(`\n================================================================================`);
     trace(
         requestId,
         startTime,
         `🚀 REQUEST START`,
         `action=${actionName} activeRequests=${ACTIVE_REQUESTS} pid=${process.pid}`
     );
-    trace(requestId, startTime, `REQ BODY`, safeJson(dto));
 
     try {
         trace(
@@ -240,19 +284,20 @@ async function handleRequest(req, res, actionName, TriggerClass) {
             trace(requestId, startTime, `SKIP closeEventPage in catch`, `page is null`);
         }
 
-        res.status(500).json({
-            success: false,
-            error: err.message,
-            requestId
-        });
+        if (!res.headersSent) {
+            res.status(500).json({
+                success: false,
+                error: err.message,
+                requestId
+            });
 
-        trace(
-            requestId,
-            startTime,
-            `HTTP RESPONSE SENT`,
-            `status=500`
-        );
-
+            trace(
+                requestId,
+                startTime,
+                `HTTP RESPONSE SENT`,
+                `status=500`
+            );
+        }
     } finally {
         trace(
             requestId,
@@ -314,7 +359,6 @@ async function handleRequest(req, res, actionName, TriggerClass) {
             `🏁 REQUEST END`,
             `action=${actionName} total=${elapsed(startTime)}ms activeRequests=${ACTIVE_REQUESTS}`
         );
-        console.log(`================================================================================\n`);
     }
 }
 
@@ -338,31 +382,27 @@ async function sendErrorLog(payload) {
 ================================ */
 
 router.post('/trigger-fb-crawl', (req, res) =>
-    handleRequest(req, res, 'FB_CRAWL', FbCrawlTrigger)
+    enqueueRequest(req, res, 'FB_CRAWL', FbCrawlTrigger)
 );
 
 router.post('/trigger-tw-crawl', (req, res) =>
-    handleRequest(req, res, 'TW_CRAWL', TwCrawlTrigger)
+    enqueueRequest(req, res, 'TW_CRAWL', TwCrawlTrigger)
 );
 
 router.post('/post_group', (req, res) =>
-    handleRequest(req, res, 'POST_GROUP', PostGroupTrigger)
+    enqueueRequest(req, res, 'POST_GROUP', PostGroupTrigger)
 );
 
 router.post('/post-story', (req, res) =>
-    handleRequest(req, res, 'POST_STORY', PostStoryTrigger)
+    enqueueRequest(req, res, 'POST_STORY', PostStoryTrigger)
 );
 
 router.post('/post_tweet', (req, res) =>
-    handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)
+    enqueueRequest(req, res, 'POST_TWEET', PostTweetTrigger)
 );
 
 router.post('/post-profile', (req, res) =>
-    handleRequest(req, res, 'POST_PROFILE', PostProfileTrigger)
-);
-
-router.post('/', (req, res) =>
-    handleRequest(req, res, 'POST_TWEET', PostTweetTrigger)
+    enqueueRequest(req, res, 'POST_PROFILE', PostProfileTrigger)
 );
 
 router.post('/bot/sleep', async (req, res) => {
