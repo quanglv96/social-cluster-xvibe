@@ -61,30 +61,20 @@ export class FacebookCrawler {
 
                 const imageData = await page.evaluate(() => {
 
-                    const imgs = Array.from(document.querySelectorAll('img'));
+                    const img = document.querySelector('img[data-visualcompletion="media-vc-image"]');
 
-                    const validImg = imgs.find(img => {
-                        if (!img.src) return false;
+                    if (!img) return null;
 
-                        // ❌ bỏ SVG hoặc data
-                        if (img.src.startsWith('data:image')) return false;
+                    if (!img.src) return null;
 
-                        // ❌ bỏ ảnh nhỏ
-                        if (img.naturalWidth < 400) return false;
-
-                        // ✅ Facebook CDN
-                        if (!img.src.includes('scontent')) return false;
-
-                        return true;
-                    });
-
-                    if (!validImg) return null;
+                    if (img.src.startsWith('data:image')) return null;
 
                     return {
-                        url: validImg.src,
-                        width: validImg.naturalWidth,
-                        height: validImg.naturalHeight
+                        url: img.src,
+                        width: img.naturalWidth,
+                        height: img.naturalHeight
                     };
+
                 });
 
                 if (!imageData) {
