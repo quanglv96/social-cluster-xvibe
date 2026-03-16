@@ -83,15 +83,13 @@ export class TwCrawlTrigger {
             // 4. UPDATE CHECKPOINT
             // =====================
             console.log(`[${jobId}] 🔄 Updating checkpoint...`);
-            if (newLastUrl) {
+            if (newLastUrl && newLastUrl !== last_image) {
                 await ApiService.updatePageCheckpoint(id, newLastUrl);
+                console.log(`[${jobId}] ✅ Checkpoint updated`);
+
+            } else {
+                console.log(`[${jobId}] ⏭ Checkpoint unchanged`);
             }
-
-            console.log(`[${jobId}] ✅ Checkpoint updated`);
-
-            console.log(
-                `[${jobId}] 🎉 DONE - Total time: ${Date.now() - startTime}ms`
-            );
 
             console.log(`[${jobId}] =============================`);
 

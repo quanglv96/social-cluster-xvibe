@@ -13,7 +13,7 @@ export class FbCrawlTrigger {
             throw new Error("FbCrawlTrigger requires an event page");
         }
 
-        const { id, source } = dto;
+        const {id, source, last_image, type} = dto;
         const jobId = id || `JOB_${Date.now()}`;
         const startTime = Date.now();
 
@@ -71,8 +71,13 @@ export class FbCrawlTrigger {
             // =====================
             console.log(`[${jobId}] 🔄 Updating checkpoint...`);
 
-            await ApiService.updatePageCheckpoint(id, newLastUrl);
+            if (newLastUrl && newLastUrl !== last_image) {
+                await ApiService.updatePageCheckpoint(id, newLastUrl);
+                console.log(`[${jobId}] ✅ Checkpoint updated`);
 
+            } else {
+                console.log(`[${jobId}] ⏭ Checkpoint unchanged`);
+            }
             console.log(`[${jobId}] ✅ Checkpoint updated`);
 
             console.log(
