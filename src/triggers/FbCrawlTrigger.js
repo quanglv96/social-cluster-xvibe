@@ -29,7 +29,7 @@ export class FbCrawlTrigger {
             // =====================
             console.log(`[${jobId}] 🔍 Crawling images...`);
 
-            const { images, newLastUrl } =
+            const {success, images, newLastUrl } =
                 await this.social.fbCrawler(dto, page);   // ✅ FIXED
 
             console.log(
@@ -86,6 +86,7 @@ export class FbCrawlTrigger {
             console.log(`[${jobId}] =============================`);
 
             return {
+                success,
                 images,
                 newLastUrl
             };

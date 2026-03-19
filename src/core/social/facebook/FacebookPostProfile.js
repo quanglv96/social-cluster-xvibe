@@ -3,7 +3,7 @@ import axios from 'axios';
 import path from 'path';
 import os from 'os';
 
-import { DelayService } from '../../../services/delay.service.js';
+import {DelayService} from '../../../services/delay.service.js';
 
 export class FacebookPostProfile {
 
@@ -19,6 +19,7 @@ export class FacebookPostProfile {
             data
         );
     }
+
     async post({
                    content,
                    url_image: imageUrl,
@@ -62,7 +63,7 @@ export class FacebookPostProfile {
                 this.log('Profile post failed', {error: err.message});
             }
             this.log('Post process completed');
-
+            return {success: true}
         } finally {
 
             if (imageFilePath && fs.existsSync(imageFilePath)) {
@@ -83,7 +84,7 @@ export class FacebookPostProfile {
         const postBox = await page.waitForSelector(
             'div[role="button"]:has(span:has-text("nghĩ gì")), \
              div[role="button"]:has(span:has-text("What\'s on your mind"))',
-            { timeout: 20000 }
+            {timeout: 20000}
         );
 
         if (!postBox) {
@@ -98,7 +99,7 @@ export class FacebookPostProfile {
          */
         const textbox = await page.waitForSelector(
             'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-            { timeout: 10000 }
+            {timeout: 10000}
         );
 
         if (!textbox) {
@@ -143,7 +144,7 @@ export class FacebookPostProfile {
             if (!isDisabled) {
                 await btn.click();
                 clickedNext = true;
-                this.log('Profile post button clickedNext', { selector });
+                this.log('Profile post button clickedNext', {selector});
                 break;
             }
         }
@@ -175,7 +176,7 @@ export class FacebookPostProfile {
             if (!isDisabled) {
                 await btn.click();
                 clicked = true;
-                this.log('Profile post button clicked', { selector });
+                this.log('Profile post button clicked', {selector});
                 break;
             }
         }

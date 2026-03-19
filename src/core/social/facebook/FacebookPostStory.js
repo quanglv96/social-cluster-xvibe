@@ -3,7 +3,7 @@ import axios from 'axios';
 import path from 'path';
 import os from 'os';
 
-import { DelayService } from '../../../services/delay.service.js';
+import {DelayService} from '../../../services/delay.service.js';
 import {config} from "../../../config/config.js";
 
 export class FacebookPostStory {
@@ -69,7 +69,7 @@ export class FacebookPostStory {
 
                 this.log('Switching to PAGE');
 
-                await this.switchToPage(page, page_admin_url );
+                await this.switchToPage(page, page_admin_url);
 
                 this.log('Posting story to PAGE');
 
@@ -77,7 +77,7 @@ export class FacebookPostStory {
             }
 
             this.log('Story process completed');
-
+            return {success: true}
         } finally {
 
             for (const file of tempFiles) {
@@ -97,7 +97,7 @@ export class FacebookPostStory {
 
         for (let i = 0; i < filePaths.length; i++) {
 
-            this.log('Posting story image', { index: i + 1 });
+            this.log('Posting story image', {index: i + 1});
 
             if (mode === 'page') {
                 await this.openCreateStoryPage(page);
@@ -114,6 +114,7 @@ export class FacebookPostStory {
             await this.delay.betweenGroup('cooldown between stories');
         }
     }
+
     async addLinkButton(page, url) {
 
         // 1️⃣ Click "Thêm nút"
@@ -121,8 +122,8 @@ export class FacebookPostStory {
             'span:has-text("Thêm nút")'
         ).first();
 
-        await addBtn.waitFor({ timeout: 15000 });
-        await addBtn.click({ force: true });
+        await addBtn.waitFor({timeout: 15000});
+        await addBtn.click({force: true});
 
         await page.waitForTimeout(2000);
 
@@ -132,8 +133,8 @@ export class FacebookPostStory {
             'input[type="radio"][value="web link"]'
         );
 
-        await webLinkRadio.waitFor({ timeout: 10000 });
-        await webLinkRadio.check({ force: true });
+        await webLinkRadio.waitFor({timeout: 10000});
+        await webLinkRadio.check({force: true});
 
         await page.waitForTimeout(1000);
 
@@ -143,13 +144,14 @@ export class FacebookPostStory {
             'span:has-text("Nhập liên kết")'
         ).locator('xpath=ancestor::div[1]//input');
 
-        await inputLink.fill(url, { force: true });
+        await inputLink.fill(url, {force: true});
 
         await page.waitForTimeout(2000);
     }
+
     async switchToPage(page, pageAdminUrl) {
 
-        this.log('Switching profile', { pageAdminUrl });
+        this.log('Switching profile', {pageAdminUrl});
 
         await page.goto(pageAdminUrl, {
             waitUntil: 'domcontentloaded'
@@ -167,7 +169,8 @@ export class FacebookPostStory {
         }
 
         await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {}),
+            page.waitForNavigation({waitUntil: 'domcontentloaded'}).catch(() => {
+            }),
             switchBtn.click()
         ]);
 
@@ -188,7 +191,7 @@ export class FacebookPostStory {
             'a[href="/stories/create/"], a[aria-label="Tạo tin"], a[aria-label="Create story"]'
         ).first();
 
-        await createStoryLink.waitFor({ state: 'visible', timeout: 15000 });
+        await createStoryLink.waitFor({state: 'visible', timeout: 15000});
         await createStoryLink.click();
 
         await this.delay.action('after click create story', page);
@@ -201,10 +204,10 @@ export class FacebookPostStory {
             'a[aria-label="Tạo tin"], a[aria-label="Create story"]'
         ).first();
 
-        await createBtn.waitFor({ timeout: 20000 });
+        await createBtn.waitFor({timeout: 20000});
 
         await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+            page.waitForNavigation({waitUntil: 'domcontentloaded'}),
             createBtn.click()
         ]);
 
@@ -212,13 +215,14 @@ export class FacebookPostStory {
 
         await page.waitForTimeout(4000);
     }
+
     async uploadStoryByDrop(page, filePath) {
 
         const fileName = path.basename(filePath);
-        const fileBase64 = fs.readFileSync(filePath, { encoding: 'base64' });
+        const fileBase64 = fs.readFileSync(filePath, {encoding: 'base64'});
 
         const dataTransfer = await page.evaluateHandle(
-            async ({ fileBase64, fileName }) => {
+            async ({fileBase64, fileName}) => {
 
                 const byteCharacters = atob(fileBase64);
                 const byteNumbers = new Array(byteCharacters.length);
@@ -229,8 +233,8 @@ export class FacebookPostStory {
 
                 const byteArray = new Uint8Array(byteNumbers);
 
-                const blob = new Blob([byteArray], { type: 'image/jpeg' });
-                const file = new File([blob], fileName, { type: 'image/jpeg' });
+                const blob = new Blob([byteArray], {type: 'image/jpeg'});
+                const file = new File([blob], fileName, {type: 'image/jpeg'});
 
                 const dt = new DataTransfer();
                 dt.items.add(file);
@@ -238,25 +242,26 @@ export class FacebookPostStory {
                 return dt;
 
             },
-            { fileBase64, fileName }
+            {fileBase64, fileName}
         );
 
         // drop vào body
-        await page.dispatchEvent('body', 'dragenter', { dataTransfer });
-        await page.dispatchEvent('body', 'dragover', { dataTransfer });
-        await page.dispatchEvent('body', 'drop', { dataTransfer });
+        await page.dispatchEvent('body', 'dragenter', {dataTransfer});
+        await page.dispatchEvent('body', 'dragover', {dataTransfer});
+        await page.dispatchEvent('body', 'drop', {dataTransfer});
 
         await page.waitForTimeout(5000);
     }
+
     async shareStory(page) {
 
         const shareBtn = page.locator(
             'span:has-text("Chia sẻ lên tin")'
         ).locator('xpath=ancestor::div[1]');
 
-        await shareBtn.waitFor({ timeout: 20000 });
+        await shareBtn.waitFor({timeout: 20000});
 
-        await shareBtn.click({ force: true });
+        await shareBtn.click({force: true});
 
         await page.waitForTimeout(5000);
     }

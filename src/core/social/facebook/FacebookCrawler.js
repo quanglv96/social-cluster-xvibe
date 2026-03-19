@@ -1,4 +1,4 @@
-import { config } from "../../../config/config.js";
+import {config} from "../../../config/config.js";
 
 export class FacebookCrawler {
 
@@ -9,7 +9,7 @@ export class FacebookCrawler {
     /**
      * page được truyền từ SessionManager (event tab)
      */
-    async crawl({ id, last_image, source }, page) {
+    async crawl({id, last_image, source}, page) {
 
         if (!page) {
             throw new Error("FacebookCrawler requires an event page");
@@ -26,7 +26,7 @@ export class FacebookCrawler {
         try {
 
             console.log(`[${crawlId}] ➡ Navigating to viewer...`);
-            await page.goto(last_image, { waitUntil: 'domcontentloaded' });
+            await page.goto(last_image, {waitUntil: 'domcontentloaded'});
             await page.waitForTimeout(5000);
             console.log(`[${crawlId}] ✅ Viewer loaded`);
             //
@@ -109,7 +109,7 @@ export class FacebookCrawler {
                 `[${crawlId}] ⏱ Duration: ${Date.now() - startTime}ms`
             );
 
-            return { images, newLastUrl };
+            return {success: true, images: images, newLastUrl: newLastUrl};
 
         } catch (err) {
 

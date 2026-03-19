@@ -21,7 +21,7 @@ export class TwitterCrawler {
         }
     }
 
-    async crawl({ id, last_image, source }, page) {
+    async crawl({id, last_image, source}, page) {
 
         if (!page) {
             throw new Error("TwitterCrawler requires a page");
@@ -114,8 +114,8 @@ export class TwitterCrawler {
                 `[${crawlId}] ⏱ Duration: ${Date.now() - startTime}ms`
             );
 
-            return { images, newLastUrl };
-
+            // return { images, newLastUrl };
+            return {success: true, images: images, newLastUrl: newLastUrl};
         } catch (err) {
 
             console.error(`[${crawlId}] ❌ Crawl error: ${err.message}`);

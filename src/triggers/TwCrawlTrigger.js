@@ -44,7 +44,7 @@ export class TwCrawlTrigger {
             // =====================
             console.log(`[${jobId}] 🔍 Crawling images...`);
 
-            const {images, newLastUrl} =
+            const {success, images, newLastUrl} =
                 await this.social.twCrawler(dto, page);
 
             console.log(`[${jobId}] ✅ Crawl done. Found ${images.length} images`);
@@ -94,6 +94,7 @@ export class TwCrawlTrigger {
             console.log(`[${jobId}] =============================`);
 
             return {
+                success,
                 images,
                 newLastUrl
             };

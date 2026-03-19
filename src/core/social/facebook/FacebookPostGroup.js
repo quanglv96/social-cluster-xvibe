@@ -202,7 +202,7 @@ export class FacebookPostGroup {
             }
 
             this.log('Post process completed');
-
+            return   {success: true}
         } finally {
 
             if (imageFilePath && fs.existsSync(imageFilePath)) {

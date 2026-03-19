@@ -1,13 +1,13 @@
 import express from 'express';
-import { SessionManager } from '../core/session/SessionManager.js';
-import { FbCrawlTrigger } from '../triggers/FbCrawlTrigger.js';
-import { PostGroupTrigger } from '../triggers/PostGroupTrigger.js';
-import { PostTweetTrigger } from '../triggers/PostTweetTrigger.js';
-import { ContextFactory } from '../core/browser/ContextFactory.js';
-import { PostStoryTrigger } from "../triggers/PostStoryTrigger.js";
-import { config } from "../config/config.js";
-import { PostProfileTrigger } from "../triggers/PostProfileTrigger.js";
-import { TwCrawlTrigger } from "../triggers/TwCrawlTrigger.js";
+import {SessionManager} from '../core/session/SessionManager.js';
+import {FbCrawlTrigger} from '../triggers/FbCrawlTrigger.js';
+import {PostGroupTrigger} from '../triggers/PostGroupTrigger.js';
+import {PostTweetTrigger} from '../triggers/PostTweetTrigger.js';
+import {ContextFactory} from '../core/browser/ContextFactory.js';
+import {PostStoryTrigger} from "../triggers/PostStoryTrigger.js";
+import {config} from "../config/config.js";
+import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
+import {TwCrawlTrigger} from "../triggers/TwCrawlTrigger.js";
 
 const router = express.Router();
 
@@ -255,7 +255,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             `trigger=${TriggerClass.name} executePage=${pageDebugId(page || rootPage, 'NO_PAGE')}`
         );
 
-        await measure(requestId, startTime, `${TriggerClass.name}.execute(dto, page)`, async () => {
+        const result = await measure(requestId, startTime, `${TriggerClass.name}.execute(dto, page)`, async () => {
             return await trigger.execute(dto, page || rootPage);
         });
 
@@ -266,7 +266,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             `pageUsed=${pageDebugId(page || rootPage, 'NO_PAGE')}`
         );
 
-        res.json({ success: true, requestId });
+        res.json({success: true, request_id: requestId, value: result?.images?.length ?? 0});
 
         trace(
             requestId,
@@ -377,7 +377,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             );
             const nextActive = ACTIVE_REQUESTS - 1;
 
-            if (nextActive === 0 && queue.length === 0){
+            if (nextActive === 0 && queue.length === 0) {
                 trace(
                     requestId,
                     startTime,
@@ -426,7 +426,7 @@ async function sendErrorLog(payload) {
         console.error(`[${nowIso()}] [SEND_ERROR_LOG] api=${config.apiLogError}`);
         await fetch(`${config.apiLogError}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         });
     } catch (e) {
@@ -470,10 +470,10 @@ router.post('/bot/sleep', async (req, res) => {
         trace(requestId, startTime, 'BOT SLEEP START');
         await SessionManager.sleep();
         trace(requestId, startTime, 'BOT SLEEP DONE');
-        res.json({ status: 'sleeping', requestId });
+        res.json({status: 'sleeping', requestId});
     } catch (err) {
         traceError(requestId, startTime, 'BOT SLEEP FAILED', err);
-        res.status(500).json({ status: 'error', error: err.message, requestId });
+        res.status(500).json({status: 'error', error: err.message, requestId});
     }
 });
 
@@ -484,10 +484,10 @@ router.post('/bot/wakeup', async (req, res) => {
         trace(requestId, startTime, 'BOT WAKEUP START');
         await SessionManager.wakeup();
         trace(requestId, startTime, 'BOT WAKEUP DONE');
-        res.json({ status: 'running', requestId });
+        res.json({status: 'running', requestId});
     } catch (err) {
         traceError(requestId, startTime, 'BOT WAKEUP FAILED', err);
-        res.status(500).json({ status: 'error', error: err.message, requestId });
+        res.status(500).json({status: 'error', error: err.message, requestId});
     }
 });
 

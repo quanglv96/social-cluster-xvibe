@@ -81,7 +81,7 @@ export class TwitterPost {
             }
         }
 
-        // ❌ KHÔNG close page ở đây nữa
+        return {success: true};
     }
 
     truncateTwitterContent(content, maxLength = 280) {
