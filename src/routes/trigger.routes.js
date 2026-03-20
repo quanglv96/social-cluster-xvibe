@@ -490,5 +490,29 @@ router.post('/bot/wakeup', async (req, res) => {
         res.status(500).json({status: 'error', error: err.message, requestId});
     }
 });
+router.post('/bot/force-logout', async (req, res) => {
+    const requestId = buildRequestId('FORCE_LOGOUT');
+    const startTime = Date.now();
 
+    try {
+        trace(requestId, startTime, 'FORCE LOGOUT START');
+
+        await SessionManager.forceLogout('manual_trigger');
+
+        trace(requestId, startTime, 'FORCE LOGOUT DONE');
+
+        res.json({
+            success: true,
+            requestId
+        });
+    } catch (err) {
+        traceError(requestId, startTime, 'FORCE LOGOUT FAILED', err);
+
+        res.status(500).json({
+            success: false,
+            error: err.message,
+            requestId
+        });
+    }
+});
 export default router;

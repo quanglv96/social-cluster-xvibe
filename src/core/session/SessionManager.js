@@ -14,6 +14,93 @@ export class SessionManager {
     // PUBLIC
     // =========================
 
+
+    static async forceLogout(reason = 'unknown') {
+        const start = Date.now();
+        console.log(`[${new Date().toISOString()}] [FORCE_LOGOUT] START reason=${reason}`);
+
+        try {
+            // 1. stop navigator trước
+            if (this.navigator) {
+                try {
+                    await this.navigator.stop();
+                } catch (e) {
+                    console.warn('[FORCE_LOGOUT] navigator stop error:', e.message);
+                }
+                this.navigator = null;
+            }
+
+            // 2. logout qua Facebook (best effort)
+            if (this.context) {
+                const pages = this.context.pages();
+
+                for (const page of pages) {
+                    try {
+                        await page.goto('https://www.facebook.com', {
+                            waitUntil: 'domcontentloaded',
+                            timeout: 15000
+                        });
+
+                        // click avatar
+                        await page.click(
+                            '[aria-label="Trang cá nhân của bạn"], [aria-label="Your profile"], [aria-label="Account"]'
+                        );
+
+                        // click logout + wait navigation
+                        await Promise.all([
+                            page.waitForNavigation({waitUntil: 'load', timeout: 10000}),
+                            page.click('text=/Đăng xuất|Log Out/i')
+                        ]);
+
+                        // verify
+                        if (!page.url().includes('login')) {
+                            await page.goto('https://www.facebook.com/logout.php');
+                        }
+
+                        // clear storage
+                        await page.evaluate(async () => {
+                            localStorage.clear();
+                            sessionStorage.clear();
+                        });
+
+                    } catch (err) {
+                        console.warn('[FORCE_LOGOUT] fallback...', err.message);
+
+                        await page.goto('https://www.facebook.com/logout.php');
+                    }
+                }
+
+                // 3. clear cookies (extra safety)
+                try {
+                    await this.context.clearCookies();
+                } catch (e) {
+                    console.warn('[FORCE_LOGOUT] clearCookies error:', e.message);
+                }
+
+                // 4. đóng context (quan trọng nhất)
+                try {
+                    await this.context.close();
+                } catch (e) {
+                    console.warn('[FORCE_LOGOUT] close context error:', e.message);
+                }
+            }
+
+            // 5. reset toàn bộ state
+            this.context = null;
+            this.rootPage = null;
+            this.createdAt = null;
+            this.lifeHours = null;
+            this.hasEvent = false;
+
+            console.log(`[FORCE_LOGOUT] DONE duration=${Date.now() - start}ms`);
+
+        } catch (err) {
+            console.error(`[FORCE_LOGOUT] ERROR ${err.message}`);
+            throw err;
+        }
+    }
+
+
     static async getSession() {
 
         if (!this.context || await this.#isExpired()) {
@@ -115,7 +202,7 @@ export class SessionManager {
         const browser = await BrowserManager.getBrowser();
 
         this.context = await browser.newContext({
-            viewport: { width: 1366, height: 768 },
+            viewport: {width: 1366, height: 768},
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             locale: 'en-US',
             timezoneId: 'Asia/Ho_Chi_Minh'
