@@ -41,11 +41,22 @@ export class TwitterCrawler {
         try {
 
             await page.waitForTimeout(3000);
+            for (let i = 1; i <= 3; i++) {
+                console.log(`[${crawlId}] 🔄 Scroll warmup ${i}/2`);
 
+                await page.evaluate(() => {
+                    window.scrollBy(0, window.innerHeight * 1.5);
+                });
+
+                await page.waitForTimeout(1500);
+            }
+            const allItems = await page.$$('[id^="verticalGridItem-"]');
+            console.log(`[${crawlId}] 🔍 Total DOM items found: ${allItems.length}`);
+            const max = Math.min(allItems.length, 100);
             const normalizedLast =
                 last_image ? this.normalizeImage(last_image) : null;
 
-            for (let i = 0; i <= 10; i++) {
+            for (let i = 0; i <= max; i++) {
 
                 if (stop) break;
 
