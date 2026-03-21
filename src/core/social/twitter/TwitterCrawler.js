@@ -105,16 +105,19 @@ export class TwitterCrawler {
                     break;
 
                 }
-                if(i===0 && normalizedLast && normalizedUrl !== normalizedLast) {
-                    console.log(`[${crawlId}] ⚠ Last image mismatch on first item! Expected: ${normalizedLast}`);
-                    newLastUrl=normalizedUrl;
-                }
                 images.push({
                     url: normalizedUrl,
                     width: imageData.width,
                     height: imageData.height
                 });
 
+            }
+            // ===== SET NEW LAST IMAGE =====
+            const firstImage = images.length > 0 ? images[0].url : null;
+
+            if (firstImage && firstImage !== normalizedLast) {
+                console.log(`[${crawlId}] 🆕 New last image detected: ${firstImage}`);
+                newLastUrl = firstImage;
             }
 
             console.log(
