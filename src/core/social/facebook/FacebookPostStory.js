@@ -205,7 +205,6 @@ export class FacebookPostStory {
         ).first();
 
         await createBtn.waitFor({state: 'visible', timeout: 15000});
-        await createBtn.click();
         await Promise.all([
             page.waitForNavigation({waitUntil: 'domcontentloaded'}),
             createBtn.click()
