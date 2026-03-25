@@ -40,12 +40,17 @@ export class BrowserManager {
 
         const instance = await chromium.launch({
             headless: config.headless,
-            // channel: 'chrome',
             args: [
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage'
+                '--disable-dev-shm-usage',
+                '--disable-gpu',                          // ← tắt GPU render
+                '--disable-software-rasterizer',          // ← dùng CPU render thay thế
+                '--disable-accelerated-2d-canvas',
+                '--use-gl=swiftshader',                   // ← software OpenGL, fix màn trắng
+                '--font-render-hinting=none',             // ← fix font render trên Linux
+                '--force-device-scale-factor=1',
             ]
         });
 

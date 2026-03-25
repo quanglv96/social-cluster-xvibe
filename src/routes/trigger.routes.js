@@ -279,12 +279,41 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
         traceError(requestId, startTime, 'HANDLE REQUEST FAILED', err);
 
         try {
+            let screenshotBase64 = null;
+
+            if (page) {
+                try {
+                    await page.waitForLoadState('domcontentloaded').catch(() => {});
+                    await page.waitForTimeout(1000);
+
+                    // Debug trước khi chụp
+                    const currentUrl = page.url();
+                    const pageTitle = await page.title().catch(() => 'unknown');
+                    const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 200)).catch(() => 'unknown');
+
+                    trace(requestId, startTime, 'PAGE DEBUG', `url=${currentUrl} title=${pageTitle}`);
+                    trace(requestId, startTime, 'PAGE BODY PREVIEW', bodyText);
+
+                    const screenshotBuffer = await page.screenshot({
+                        fullPage: false, // ← thử false trước
+                        type: 'jpeg',
+                        quality: 80
+                    });
+                    screenshotBase64 = screenshotBuffer.toString('base64');
+                    trace(requestId, startTime, 'SCREENSHOT CAPTURED', `size=${screenshotBuffer.length} bytes`);
+
+                } catch (ssErr) {
+                    traceError(requestId, startTime, 'SCREENSHOT FAILED', ssErr);
+                }
+            }
+
             await measure(requestId, startTime, 'sendErrorLog(payload)', async () => {
                 return await sendErrorLog({
                     type: dto?.type,
                     error_message: err.message,
                     request_id: requestId,
-                    action: actionName
+                    action: actionName,
+                    ...(screenshotBase64 && { screenshot_base64: screenshotBase64 })
                 });
             });
         } catch (sendErr) {

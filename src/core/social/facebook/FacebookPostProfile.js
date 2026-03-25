@@ -56,12 +56,7 @@ export class FacebookPostProfile {
             });
 
             await this.delay.navigation('after goto home', page);
-
-            try {
-                await this.postToProfile(page, content, imageFilePath);
-            } catch (err) {
-                this.log('Profile post failed', {error: err.message});
-            }
+            await this.postToProfile(page, content, imageFilePath);
             this.log('Post process completed');
             return {success: true}
         } finally {
@@ -84,7 +79,7 @@ export class FacebookPostProfile {
         const postBox = await page.waitForSelector(
             'div[role="button"]:has(span:has-text("nghĩ gì")), \
              div[role="button"]:has(span:has-text("What\'s on your mind"))',
-            {timeout: 20000}
+            {timeout: 30000}
         );
 
         if (!postBox) {
@@ -99,7 +94,7 @@ export class FacebookPostProfile {
          */
         const textbox = await page.waitForSelector(
             'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-            {timeout: 10000}
+            {timeout: 20000}
         );
 
         if (!textbox) {
@@ -152,7 +147,12 @@ export class FacebookPostProfile {
         if (!clickedNext) {
             throw new Error('Cannot find enabled profile Next button');
         }
-        await page.waitForTimeout(2000);
+        // ⬆️ Bỏ waitForTimeout(2000), thay bằng waitForSelector chờ nút Đăng sẵn sàng
+        await page.waitForSelector(
+            'div[role="dialog"] div[aria-label="Đăng"]:not([aria-disabled="true"]), \
+             div[role="dialog"] div[aria-label="Post"]:not([aria-disabled="true"])',
+            {timeout: 15000}
+        );
         /**
          * ===== CLICK POST BUTTON =====
          */
@@ -186,7 +186,6 @@ export class FacebookPostProfile {
         }
 
         await this.delay.navigation('after click profile post', page);
-
         this.log('Profile post success');
     }
 
