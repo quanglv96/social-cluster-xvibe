@@ -201,11 +201,11 @@ export class FacebookPostStory {
     async openCreateStoryPage(page) {
 
         const createBtn = page.locator(
-            'a[aria-label="Tạo tin"], a[aria-label="Create story"]'
+            'a[href="/stories/create/"], a[aria-label="Tạo tin"], a[aria-label="Create story"]'
         ).first();
 
-        await createBtn.waitFor({timeout: 20000});
-
+        await createBtn.waitFor({state: 'visible', timeout: 15000});
+        await createBtn.click();
         await Promise.all([
             page.waitForNavigation({waitUntil: 'domcontentloaded'}),
             createBtn.click()
