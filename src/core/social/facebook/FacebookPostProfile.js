@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 
 import {DelayService} from '../../../services/delay.service.js';
+import {logCheckpoint} from "../../../services/logCheckpoint.js";
 
 export class FacebookPostProfile {
 
@@ -76,37 +77,42 @@ export class FacebookPostProfile {
         /**
          * ===== CLICK POST BOX =====
          */
-        const postBox = await page.waitForSelector(
-            'div[role="button"]:has(span:has-text("nghĩ gì")), \
-             div[role="button"]:has(span:has-text("What\'s on your mind"))',
-            {timeout: 30000}
-        );
+        await this.step(page, 'click_post_box', async () => {
+            const postBox = await page.waitForSelector(
+                'div[role="button"]:has(span:has-text("nghĩ gì")), \
+                 div[role="button"]:has(span:has-text("What\'s on your mind"))',
+                {timeout: 30000}
+            );
 
-        if (!postBox) {
-            throw new Error('Cannot find profile post box');
-        }
+            if (!postBox) {
+                throw new Error('Cannot find profile post box');
+            }
 
-        await postBox.click();
-        await this.delay.action('after click profile post box', page);
-
+            await postBox.click();
+            await this.delay.action('after click profile post box', page);
+        });
         /**
          * ===== FIND TEXTBOX =====
          */
-        const textbox = await page.waitForSelector(
-            'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-            {timeout: 20000}
-        );
+        await this.step(page, 'fill_content', async () => {
 
-        if (!textbox) {
-            throw new Error('Cannot find profile textbox');
-        }
+            const textbox = await page.waitForSelector(
+                'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
+                {timeout: 20000}
+            );
 
-        await textbox.click();
-        await page.keyboard.press('Control+A');
-        await page.keyboard.press('Backspace');
+            if (!textbox) {
+                throw new Error('Cannot find profile textbox');
+            }
 
-        await textbox.type(content, {
-            delay: this.delay.random(40, 120)
+            await textbox.click();
+            await page.keyboard.press('Control+A');
+            await page.keyboard.press('Backspace');
+
+            await textbox.type(content, {
+                delay: this.delay.random(40, 120)
+            });
+
         });
 
         this.log('Profile content filled');
@@ -126,27 +132,30 @@ export class FacebookPostProfile {
             'div[role="dialog"] div[role="button"]:has-text("Next")',
         ];
 
-        let clickedNext = false;
+        await this.step(page, 'click_next', async () => {
 
-        for (const selector of postBtnNext) {
-            const btn = await page.$(selector);
-            if (!btn) continue;
+            let clickedNext = false;
 
-            const isDisabled = await btn.evaluate(el =>
-                el.getAttribute('aria-disabled') === 'true'
-            );
+            for (const selector of postBtnNext) {
+                const btn = await page.$(selector);
+                if (!btn) continue;
 
-            if (!isDisabled) {
-                await btn.click();
-                clickedNext = true;
-                this.log('Profile post button clickedNext', {selector});
-                break;
+                const isDisabled = await btn.evaluate(el =>
+                    el.getAttribute('aria-disabled') === 'true'
+                );
+
+                if (!isDisabled) {
+                    await btn.click();
+                    clickedNext = true;
+                    break;
+                }
             }
-        }
 
-        if (!clickedNext) {
-            throw new Error('Cannot find enabled profile Next button');
-        }
+            if (!clickedNext) {
+                throw new Error('Cannot find enabled Next button');
+            }
+
+        });
         // ⬆️ Bỏ waitForTimeout(2000), thay bằng waitForSelector chờ nút Đăng sẵn sàng
         await page.waitForSelector(
             'div[role="dialog"] div[aria-label="Đăng"]:not([aria-disabled="true"]), \
@@ -163,30 +172,67 @@ export class FacebookPostProfile {
             'div[role="dialog"] div[role="button"]:has-text("Post")',
         ];
 
-        let clicked = false;
+        await this.step(page, 'click_post', async () => {
 
-        for (const selector of postBtnSelectors) {
-            const btn = await page.$(selector);
-            if (!btn) continue;
+            let clicked = false;
 
-            const isDisabled = await btn.evaluate(el =>
-                el.getAttribute('aria-disabled') === 'true'
-            );
+            for (const selector of postBtnSelectors) {
+                const btn = await page.$(selector);
+                if (!btn) continue;
 
-            if (!isDisabled) {
-                await btn.click();
-                clicked = true;
-                this.log('Profile post button clicked', {selector});
-                break;
+                const isDisabled = await btn.evaluate(el =>
+                    el.getAttribute('aria-disabled') === 'true'
+                );
+
+                if (!isDisabled) {
+                    await btn.click();
+                    clicked = true;
+                    break;
+                }
             }
-        }
 
-        if (!clicked) {
-            throw new Error('Cannot find enabled profile Post button');
-        }
+            if (!clicked) {
+                throw new Error('Cannot find enabled Post button');
+            }
 
+        });
+        await logCheckpoint(page, {step: "verify post profile"});
         await this.delay.navigation('after click profile post', page);
         this.log('Profile post success');
+    }
+
+    async step(page, stepName, action, meta = {}) {
+        try {
+            this.log(`STEP START: ${stepName}`);
+
+            const result = await action();
+
+            await logCheckpoint(page, {
+                step: stepName,
+                message: 'success',
+                meta
+            });
+
+            return result;
+
+        } catch (e) {
+
+            await logCheckpoint(page, {
+                step: stepName,
+                message: 'error',
+                meta: {
+                    ...meta,
+                    error: e.message,
+                    stack: e.stack
+                }
+            });
+
+            this.log(`STEP ERROR: ${stepName}`, {
+                error: e.message
+            });
+
+            throw e;
+        }
     }
 
     async downloadImage(url) {
