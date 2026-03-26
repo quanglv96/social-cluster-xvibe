@@ -196,6 +196,7 @@ export class FacebookPostProfile {
             }
 
         });
+        await page.waitForTimeout(5000);
         await logCheckpoint(page, {step: "verify post profile"});
         await this.delay.navigation('after click profile post', page);
         this.log('Profile post success');
