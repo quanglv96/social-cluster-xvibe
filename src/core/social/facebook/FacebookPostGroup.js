@@ -202,6 +202,9 @@ export class FacebookPostGroup {
             }
 
             this.log('Post process completed');
+            if (postMode === 'PAGE' && pageAdminUrl) {
+                await this.switchToProfile(page);
+            }
             return   {success: true}
         } finally {
 
@@ -212,7 +215,54 @@ export class FacebookPostGroup {
 
         }
     }
+    async switchToProfile(page) {
 
+        this.log('Switching back to PROFILE');
+
+        try {
+            /**
+             * ===== STEP 1: CLICK AVATAR =====
+             */
+            const profileBtn = await page.waitForSelector(
+                '[aria-label="Trang cá nhân của bạn"][role="button"]',
+                { timeout: 10000 }
+            );
+
+            await profileBtn.click();
+
+            this.log('Clicked profile avatar');
+
+            await this.delay.action('after click avatar', page);
+
+            /**
+             * ===== STEP 2: CLICK "CHUYỂN SANG PROFILE" =====
+             * Dựa vào aria-label dynamic
+             */
+            const switchProfileBtn = await page.waitForSelector(
+                '[aria-label^="Chuyển sang"]',
+                { timeout: 10000 }
+            );
+
+            const label = await switchProfileBtn.getAttribute('aria-label');
+            this.log('Found switch profile button', { label });
+
+            await Promise.all([
+                page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {}),
+                switchProfileBtn.click()
+            ]);
+
+            await this.delay.navigation('after switch to profile', page);
+
+            this.log('Switched back to PROFILE', {
+                currentUrl: page.url()
+            });
+
+        } catch (err) {
+            this.log('Switch to PROFILE failed', {
+                error: err.message
+            });
+        }
+    }
     async switchToPage(page, pageAdminUrl) {
 
         this.log('Switching profile', { pageAdminUrl });
