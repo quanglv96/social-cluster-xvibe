@@ -235,168 +235,203 @@ export class TwitterAuth extends BaseAuth {
     }
 
     async authenticate(context, dto) {
-
-        const {cookie, user_name, password} = dto;
+        const { cookie, user_name, password } = dto;
 
         const page = await context.newPage();
-        let loggedIn = false;
 
-        this.log('🚀 START AUTHENTICATION');
+        this.log('🚀 START AUTH');
 
-        // Try cookie first
-        if (cookie) {
-            try {
-                this.log('🍪 Trying cookie login...');
+        try {
 
-                // Fix: check if cookie is valid JSON array
-                const cookies = typeof cookie === 'string' ? JSON.parse(cookie) : cookie;
+            // 👉 STEP 0: Cookie login
+            let loggedIn = false;
 
-                if (!Array.isArray(cookies)) {
-                    throw new Error('Cookie must be an array');
+            if (cookie) {
+                loggedIn = await this.tryCookieLogin(context, page, cookie);
+            }
+
+            // 👉 STEP 1: Manual login
+            if (!loggedIn) {
+
+                if (!user_name || !password) {
+                    throw new Error('Missing credentials');
                 }
 
-                await context.addCookies(cookies);
+                // random delay chống pattern
+                await this.sleep(2000 + Math.random() * 2000);
 
-                await page.goto('https://x.com/home', {
+                this.log('━━━━━━━━━━━━━━━━━━');
+                this.log('📍 STEP 1: OPEN LOGIN PAGE');
+
+                await this.ensureLoginPage(page);
+
+                await this.sleep(2000);
+
+                // 👉 STEP 2: USERNAME
+                this.log('━━━━━━━━━━━━━━━━━━');
+                this.log('📍 STEP 2: USERNAME');
+
+                await this.inputUsernameWithRetry(page, user_name);
+
+                await this.sleep(2000);
+
+                // 👉 STEP 3: PASSWORD
+                this.log('━━━━━━━━━━━━━━━━━━');
+                this.log('📍 STEP 3: PASSWORD');
+
+                await this.humanType(page, 'input[name="password"]', password);
+
+                await this.sleep(1000);
+
+                // 👉 STEP 4: CLICK LOGIN
+                this.log('━━━━━━━━━━━━━━━━━━');
+                this.log('📍 STEP 4: LOGIN CLICK');
+
+                const loginButton = page.getByRole('button', {
+                    name: /Log in|Đăng nhập/i
+                }).first();
+
+                await loginButton.waitFor({ state: 'visible', timeout: 10000 });
+
+                const box = await loginButton.boundingBox();
+                if (!box) throw new Error('No login button box');
+
+                const x = box.x + box.width * 0.5;
+                const y = box.y + box.height * 0.5;
+
+                await page.mouse.click(x, y);
+
+                this.log('⏳ Waiting for home...');
+
+                await page.waitForSelector(
+                    'a[data-testid="SideNav_NewTweet_Button"]',
+                    { timeout: 30000 }
+                );
+
+                this.log('✅ LOGIN SUCCESS');
+
+                // 👉 SAVE COOKIE
+                const newCookies = await context.cookies();
+
+                await axios.post(`${config.updateCookie}`, {
+                    type: dto.type,
+                    cookie: JSON.stringify(newCookies)
+                });
+            }
+
+        } catch (err) {
+
+            this.log(`💥 AUTH FAILED: ${err.message}`);
+
+            try {
+                await page.screenshot({ path: 'auth-error.png' });
+            } catch {}
+
+            throw err;
+
+        } finally {
+            await page.close();
+        }
+    }
+
+    async tryCookieLogin(context, page, cookie) {
+        try {
+            this.log('🍪 Trying cookie login...');
+
+            const cookies = typeof cookie === 'string'
+                ? JSON.parse(cookie)
+                : cookie;
+
+            if (!Array.isArray(cookies)) {
+                throw new Error('Invalid cookie format');
+            }
+
+            await context.addCookies(cookies);
+
+            await this.safeGoto(page, 'https://x.com/home');
+
+            await this.sleep(4000);
+
+            if (await page.$('a[data-testid="SideNav_NewTweet_Button"]')) {
+                this.log('✅ Cookie login success');
+                return true;
+            }
+
+        } catch (err) {
+            this.log(`⚠️ Cookie login failed: ${err.message}`);
+        }
+
+        return false;
+    }
+    async ensureLoginPage(page) {
+        const maxRetry = 2;
+
+        for (let i = 1; i <= maxRetry; i++) {
+            try {
+                this.log(`📍 Ensure login page attempt ${i}`);
+
+                await this.safeGoto(page, 'https://x.com/login');
+
+                await page.waitForSelector('input[name="text"]', {
+                    timeout: 10000
+                });
+
+                this.log('✅ Login page ready');
+                return;
+
+            } catch (err) {
+                this.log(`❌ Ensure login page fail ${i}: ${err.message}`);
+
+                if (i === maxRetry) throw err;
+
+                // thử reload nếu page có nội dung
+                try {
+                    if (page.url() !== 'about:blank') {
+                        this.log('🔄 Trying reload...');
+                        await page.reload({
+                            waitUntil: 'domcontentloaded',
+                            timeout: 30000
+                        });
+                    }
+                } catch (e) {
+                    this.log(`⚠️ Reload also failed`);
+                }
+
+                await this.sleep(2000 + Math.random() * 2000);
+            }
+        }
+    }
+
+    async safeGoto(page, url, options = {}) {
+        const maxRetry = 3;
+
+        for (let i = 1; i <= maxRetry; i++) {
+            try {
+                this.log(`🌐 GOTO attempt ${i}: ${url}`);
+
+                await page.goto(url, {
                     waitUntil: 'domcontentloaded',
-                    timeout: 30000
+                    timeout: 30000,
+                    ...options
                 });
 
-                await this.sleep(5000);
+                const content = await page.content();
 
-                if (await page.$('a[data-testid="SideNav_NewTweet_Button"]')) {
-                    loggedIn = true;
-                    this.log('✅ Cookie login successful');
-                }
-            } catch (err) {
-                this.log(`⚠️ Cookie login failed: ${err.message}`);
-            }
-        }
-
-        // Manual login with retry
-        if (!loggedIn) {
-
-            if (!user_name || !password) {
-                throw new Error("Twitter credential missing");
-            }
-
-            this.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            this.log('📍 STEP 1: Open login page');
-
-            try {
-                // Fix: dùng domcontentloaded thay vì networkidle
-                await page.goto('https://x.com/login', {
-                    waitUntil: 'domcontentloaded', // ✅ Thay đổi này
-                    timeout: 30000
-                });
-
-                this.log('✅ Page loaded');
-
-                // Đợi input xuất hiện (chắc chắn DOM ready)
-                await page.waitForSelector('input[name="text"]', {timeout: 10000});
-
-                this.log('✅ Login form ready');
-
-            } catch (err) {
-                this.log(`❌ Page load error: ${err.message}`);
-
-                // Fallback: thử load lại không chờ networkidle
-                this.log('🔄 Trying fallback load...');
-                await page.goto('https://x.com/login', {
-                    timeout: 30000
-                });
-
-                await page.waitForSelector('input[name="text"]', {timeout: 15000});
-            }
-
-            await this.sleep(3000);
-
-            // STEP 2 - USERNAME WITH RETRY
-            this.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            this.log('📍 STEP 2: Input username');
-
-            await this.inputUsernameWithRetry(page, user_name);
-
-            this.log('✅ Username step complete');
-            await this.sleep(2000);
-
-            // STEP 3 - PASSWORD
-            this.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            this.log('📍 STEP 3: Input password');
-
-            await this.humanType(page, 'input[name="password"]', password);
-
-            this.log('✅ Password entered');
-            await this.sleep(1000);
-
-            // STEP 4 - LOGIN
-            this.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            this.log('📍 STEP 4: Click login button');
-
-            // ✅ FIX: Dùng getByRole hoặc text chính xác
-            try {
-                // Thử tìm button "Log in" hoặc "Đăng nhập"
-                const loginButton = page.getByRole('button', {name: /Log in|Đăng nhập/i}).first();
-
-                await loginButton.waitFor({state: 'visible', timeout: 10000});
-
-                this.log('✅ Login button found');
-
-                // Human click vào login button
-                const loginBox = await loginButton.boundingBox();
-
-                if (!loginBox) {
-                    throw new Error('Cannot get login button position');
+                // Detect blank / blocked
+                if (page.url() === 'about:blank' || content.length < 1000) {
+                    throw new Error('Empty or blank page');
                 }
 
-                const loginX = loginBox.x + loginBox.width * (0.3 + Math.random() * 0.4);
-                const loginY = loginBox.y + loginBox.height * (0.3 + Math.random() * 0.4);
-
-                this.log(`🖱️ Moving to Login button (${Math.round(loginX)}, ${Math.round(loginY)})`);
-
-                // Get current mouse position
-                const currentPos = await page.evaluate(() => {
-                    return {x: window.mouseX || 0, y: window.mouseY || 0};
-                });
-
-                await this.moveMouseHumanLike(page, currentPos.x, currentPos.y, loginX, loginY);
-                await this.sleep(100 + Math.random() * 200);
-                await page.mouse.click(loginX, loginY);
-
-                // Track mouse position
-                await page.evaluate(({x, y}) => {
-                    window.mouseX = x;
-                    window.mouseY = y;
-                }, {x: loginX, y: loginY});
-
-                this.log('✅ Login button clicked');
+                this.log('✅ GOTO success');
+                return;
 
             } catch (err) {
-                this.log(`⚠️ Cannot find button with role, trying alternative selector...`);
+                this.log(`❌ GOTO fail ${i}: ${err.message}`);
 
-                // Fallback: dùng span text
-                const loginSpan = page.locator('span:has-text("Log in"), span:has-text("Đăng nhập")').first();
-                await loginSpan.waitFor({state: 'visible', timeout: 10000});
-                await loginSpan.click({delay: 200});
+                if (i === maxRetry) throw err;
 
-                this.log('✅ Login button clicked (fallback method)');
+                await this.sleep(2000 + Math.random() * 3000);
             }
-
-            this.log('⏳ Waiting for homepage...');
-
-            // Fix: đợi element thay vì networkidle
-            await page.waitForSelector('a[data-testid="SideNav_NewTweet_Button"]', {
-                timeout: 30000
-            });
-
-            this.log('✅✅✅ LOGIN SUCCESS ✅✅✅');
-            const newCookies = await context.cookies();
-            await axios.post(`${config.updateCookie}`, {
-                type: dto.type,
-                cookie: JSON.stringify(newCookies)
-            });
         }
-
-        await page.close();
     }
 }
