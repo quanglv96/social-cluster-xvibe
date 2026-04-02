@@ -44,43 +44,37 @@ export class FacebookAuth extends BaseAuth {
 
                 // Trường hợp login form bình thường
                 const emailInput = page.locator('input[name="email"]');
-                const passInput = page.locator('input[name="pass"]');
 
                 if (await emailInput.count() > 0) {
                     await emailInput.fill(user_name);
 
-                    // Có thể Facebook yêu cầu bấm Continue trước
                     const continueBtn = page.locator('span:has-text("Continue")');
 
                     if (await continueBtn.count() > 0) {
                         await continueBtn.click();
-                        await page.waitForTimeout(3000);
+
+                        // 🔥 QUAN TRỌNG: đợi password render
+                        await page.waitForSelector('input[type="password"]', { timeout: 10000 });
                     }
 
-                    if (await passInput.count() > 0) {
-                        await passInput.fill(password);
-                    }
+                    const passInput = page.locator('input[type="password"]');
 
-                    // Sau khi nhập password xong
-                    // await page.keyboard.press('Tab');
-                    // await page.keyboard.press('Tab');
+                    await passInput.fill(password);
                     await page.keyboard.press('Enter');
 
                 } else {
-                    const continueBtn = page.getByText('Continue', { exact: true })
+                    const continueBtn = page.getByText('Continue', { exact: true });
+
                     if (await continueBtn.count() > 0) {
                         await continueBtn.click();
                     }
 
-                    await page.waitForTimeout(3000);
+                    // 🔥 vẫn phải wait
+                    await page.waitForSelector('input[type="password"]', { timeout: 10000 });
 
-                    if (await passInput.count() > 0) {
-                        await passInput.fill(password);
-                    }
+                    const passInput = page.locator('input[type="password"]');
 
-                    // Sau khi nhập password xong
-                    // await page.keyboard.press('Tab');
-                    // await page.keyboard.press('Tab');
+                    await passInput.fill(password);
                     await page.keyboard.press('Enter');
                 }
 

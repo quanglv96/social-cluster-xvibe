@@ -51,14 +51,14 @@ export class FacebookPostStory {
                 const file = await this.downloadImage(url);
                 tempFiles.push(file);
             }
-
-            /**
-             * ==========================
-             * 1️⃣ POST TO PROFILE
-             * ==========================
-             */
-            this.log('Posting story to PROFILE');
-            await this.postStoryFlow(page, tempFiles, 'profile');
+            //
+            // /**
+            //  * ==========================
+            //  * 1️⃣ POST TO PROFILE
+            //  * ==========================
+            //  */
+            // this.log('Posting story to PROFILE');
+            // await this.postStoryFlow(page, tempFiles, 'profile');
 
             /**
              * ==========================
