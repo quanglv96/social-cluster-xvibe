@@ -25,10 +25,10 @@ export class FacebookPostGroup {
     }
 
     getNextPostMode() {
-        const next = 'PAGE';
-            // FacebookPostGroup.lastMode === 'PAGE'
-            //     ? 'PROFILE'
-            //     : 'PAGE';
+        const next =
+            FacebookPostGroup.lastMode === 'PAGE'
+                ? 'PROFILE'
+                : 'PAGE';
 
         FacebookPostGroup.lastMode = next;
         return next;
@@ -77,22 +77,22 @@ export class FacebookPostGroup {
 
             await this.delay.navigation('after goto home', page);
 
-            // try {
-            //     await this.profile.postToProfile(page, content, imageFilePath);
-            // } catch (err) {
-            //     this.log('Profile post failed', {error: err.message});
-            // }
+            try {
+                await this.profile.postToProfile(page, content, imageFilePath);
+            } catch (err) {
+                this.log('Profile post failed', {error: err.message});
+            }
 
             /**
              * ===== SWITCH PROFILE =====
              */
-            // const postMode = this.getNextPostMode();
-            //
-            // this.log('Auto select posting mode', {postMode});
-            //
-            // if (postMode === 'PAGE' && pageAdminUrl) {
+            const postMode = this.getNextPostMode();
+
+            this.log('Auto select posting mode', {postMode});
+
+            if (postMode === 'PAGE' && pageAdminUrl) {
                 await this.switchToPage(page, pageAdminUrl);
-            // }
+            }
 
             const groups = groupUrls.slice(0, 10);
 

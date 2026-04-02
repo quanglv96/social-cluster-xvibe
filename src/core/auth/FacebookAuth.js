@@ -78,7 +78,7 @@ export class FacebookAuth extends BaseAuth {
                     await page.keyboard.press('Enter');
                 }
 
-                await page.waitForTimeout(8000);
+                await page.waitForTimeout(15000);
 
                 await this.handleFacebookDialogs(page);
 

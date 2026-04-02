@@ -125,58 +125,23 @@ export class FacebookPostProfile {
         if (imageFilePath) {
             await this.uploadImageFile(page, imageFilePath);
         }
-        const postBtnNext = [
-            'div[role="dialog"] div[aria-label="Tiếp"]',
-            'div[role="dialog"] div[aria-label="Next"]',
-            'div[role="dialog"] div[role="button"]:has-text("Tiếp")',
-            'div[role="dialog"] div[role="button"]:has-text("Next")',
-        ];
-
-        await this.step(page, 'click_next', async () => {
-
-            let clickedNext = false;
-
-            for (const selector of postBtnNext) {
-                const btn = await page.$(selector);
-                if (!btn) continue;
-
-                const isDisabled = await btn.evaluate(el =>
-                    el.getAttribute('aria-disabled') === 'true'
-                );
-
-                if (!isDisabled) {
-                    await btn.click();
-                    clickedNext = true;
-                    break;
-                }
-            }
-
-            if (!clickedNext) {
-                throw new Error('Cannot find enabled Next button');
-            }
-
-        });
-        // ⬆️ Bỏ waitForTimeout(2000), thay bằng waitForSelector chờ nút Đăng sẵn sàng
-        await page.waitForSelector(
-            'div[role="dialog"] div[aria-label="Đăng"]:not([aria-disabled="true"]), \
-             div[role="dialog"] div[aria-label="Post"]:not([aria-disabled="true"])',
-            {timeout: 15000}
-        );
-        /**
-         * ===== CLICK POST BUTTON =====
-         */
-        const postBtnSelectors = [
+        const postSelectors = [
             'div[role="dialog"] div[aria-label="Đăng"]',
             'div[role="dialog"] div[aria-label="Post"]',
             'div[role="dialog"] div[role="button"]:has-text("Đăng")',
             'div[role="dialog"] div[role="button"]:has-text("Post")',
         ];
 
-        await this.step(page, 'click_post', async () => {
+        const nextSelectors = [
+            'div[role="dialog"] div[aria-label="Tiếp"]',
+            'div[role="dialog"] div[aria-label="Next"]',
+            'div[role="dialog"] div[role="button"]:has-text("Tiếp")',
+            'div[role="dialog"] div[role="button"]:has-text("Next")',
+        ];
 
-            let clicked = false;
-
-            for (const selector of postBtnSelectors) {
+        // helper
+        const clickIfEnabled = async (selectors) => {
+            for (const selector of selectors) {
                 const btn = await page.$(selector);
                 if (!btn) continue;
 
@@ -186,13 +151,35 @@ export class FacebookPostProfile {
 
                 if (!isDisabled) {
                     await btn.click();
-                    clicked = true;
-                    break;
+                    return true;
                 }
             }
+            return false;
+        };
 
-            if (!clicked) {
-                throw new Error('Cannot find enabled Post button');
+        await this.step(page, 'post_flow', async () => {
+
+            // ===== 1. TRY POST FIRST =====
+            const posted = await clickIfEnabled(postSelectors);
+            if (posted) return; // END luôn
+
+            // ===== 2. CLICK NEXT =====
+            const clickedNext = await clickIfEnabled(nextSelectors);
+            if (!clickedNext) {
+                throw new Error('Cannot find enabled Next button');
+            }
+
+            // ===== 3. WAIT POST APPEAR =====
+            await page.waitForSelector(
+                'div[role="dialog"] div[aria-label="Đăng"]:not([aria-disabled="true"]), \
+                 div[role="dialog"] div[aria-label="Post"]:not([aria-disabled="true"])',
+                { timeout: 15000 }
+            );
+
+            // ===== 4. CLICK POST =====
+            const postedAfterNext = await clickIfEnabled(postSelectors);
+            if (!postedAfterNext) {
+                throw new Error('Post button appeared but cannot click');
             }
 
         });
