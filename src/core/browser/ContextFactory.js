@@ -1,12 +1,20 @@
 import {SessionManager} from '../session/SessionManager.js';
 import {SocialFactory} from "../factory/SocialFactory.js";
+import {FacebookSocial} from "../social/facebook/FacebookSocial.js";
+import {FacebookContextPool} from "../auth/FacebookContextPool.js";
 
 export class ContextFactory {
 
     static async create(dto) {
-
+        const FB_TYPES = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB'];
+        const {type} = dto;
+        // Facebook: dùng pool riêng theo account
+        if (FB_TYPES.includes(type)) {
+            const context = await FacebookContextPool.getContext(dto);
+            return {social: new FacebookSocial(context)};
+        }
         // Lấy session đang sống (hoặc tự tạo nếu chưa có / hết hạn)
-        const { context } = await SessionManager.getSession();
+        const {context} = await SessionManager.getSession();
 
         // Tạo social theo type (giữ nguyên logic cũ)
         const social = SocialFactory.create(dto.type, context);
@@ -14,6 +22,6 @@ export class ContextFactory {
         // Authenticate vẫn giữ nguyên behavior cũ
         await social.authenticate(dto);
 
-        return { context, social };
+        return {context, social};
     }
 }

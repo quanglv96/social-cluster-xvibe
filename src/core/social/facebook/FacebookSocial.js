@@ -10,16 +10,16 @@ export class FacebookSocial extends BaseSocial {
 
     constructor(context) {
         super(context);
-        this.auth = new FacebookAuth();
+        // this.auth = new FacebookAuth();
         this.fb_crawler = new FacebookCrawler(context);
         this.postGroup = new FacebookPostGroup(context);
         this.postProfile = new FacebookPostProfile(context);
         this.postStory = new FacebookPostStory(context);
     }
-
-    async authenticate(dto) {
-        await this.auth.authenticate(this.context, dto);
-    }
+    //
+    // async authenticate(dto) {
+    //     await this.auth.authenticate(this.context, dto);
+    // }
 
     async fbCrawler(dto, page) {
         return await this.fb_crawler.crawl(dto ,page);
