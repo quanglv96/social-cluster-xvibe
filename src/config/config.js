@@ -28,5 +28,5 @@ export const config = {
     // Timeouts
     // =============================
     defaultWait: parseInt(process.env.DEFAULT_WAIT || '3000'),
-
+    facebookProfileDir: './fb_profiles', // folder lưu multi-profile
 };

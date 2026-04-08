@@ -34,25 +34,34 @@ export class BrowserManager {
     // =========================
     // PRIVATE LAUNCH
     // =========================
-    static async #launchBrowser() {
-
+    static async launchBrowser(profilePath) {
         console.log('[BrowserManager] Launching new browser...');
 
-        const instance = await chromium.launch({
-            headless: config.headless,
-            args: [
-                '--disable-blink-features=AutomationControlled',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',                          // ← tắt GPU render
-                '--disable-software-rasterizer',          // ← dùng CPU render thay thế
-                '--disable-accelerated-2d-canvas',
-                '--use-gl=swiftshader',                   // ← software OpenGL, fix màn trắng
-                '--font-render-hinting=none',             // ← fix font render trên Linux
-                '--force-device-scale-factor=1',
-            ]
-        });
+        const args = [
+            '--disable-blink-features=AutomationControlled',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-accelerated-2d-canvas',
+            '--use-gl=swiftshader',
+            '--font-render-hinting=none',
+            '--force-device-scale-factor=1',
+        ];
+
+        const instance = await chromium.launchPersistentContext(
+            profilePath || undefined, // nếu truyền profilePath thì dùng profile riêng
+            {
+                headless: false, // bật Chrome thật
+                args,
+                viewport: { width: 1366, height: 768 },
+                userAgent:
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                locale: 'en-US',
+                timezoneId: 'Asia/Ho_Chi_Minh',
+            }
+        );
 
         instance.on('disconnected', () => {
             console.warn('[BrowserManager] Browser disconnected');

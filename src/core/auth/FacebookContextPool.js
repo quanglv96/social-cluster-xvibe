@@ -1,7 +1,8 @@
 import { BrowserManager } from '../browser/BrowserManager.js';
 import { FacebookAuth } from '../../auth/FacebookAuth.js';
 import { config } from '../../config/config.js';
-
+import path from 'path';
+import fs from 'fs';
 /**
  * Pool context theo từng Facebook account (key = type).
  * Mỗi account có 1 context riêng, tái sử dụng trong lifeHours ngẫu nhiên.
@@ -115,12 +116,14 @@ export class FacebookContextPool {
         const browser = await BrowserManager.getBrowser();
 
         // Rotate fingerprint nhẹ để tránh detect
-        const context = await browser.newContext({
-            viewport: this.#randomViewport(),
-            userAgent: this.#randomUserAgent(),
-            locale: 'en-US',
-            timezoneId: 'Asia/Ho_Chi_Minh',
-        });
+        const profileDir = path.resolve(config.facebookProfileDir, dto.accountId);
+// config.facebookProfileDir: folder lưu profiles
+
+        if (!fs.existsSync(profileDir)) {
+            fs.mkdirSync(profileDir, { recursive: true });
+        }
+
+        const context = await BrowserManager.launchBrowser(profileDir);
 
         await context.addInitScript(() => {
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
