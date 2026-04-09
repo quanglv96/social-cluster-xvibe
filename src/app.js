@@ -2,6 +2,8 @@ import express from 'express';
 import http from 'http';
 import triggerRoutes from './routes/trigger.routes.js';
 import {BrowserManager} from './core/browser/BrowserManager.js';
+import {AppRegistryService} from "./AppRegistryService.js";
+import {TunnelService} from "./TunnelService.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -10,7 +12,7 @@ const MAX_ACTIVE_REQUESTS = Number(process.env.MAX_ACTIVE_REQUESTS || 20);
 const RECOVERY_WAIT_TIMEOUT_MS = Number(process.env.RECOVERY_WAIT_TIMEOUT_MS || 10000);
 
 let isRecovering = false;
-let isHealthy = true;
+let isHealthy = false; // ❗ chưa healthy cho đến khi bootstrap xong
 let activeRequests = 0;
 let recoveryPromise = null;
 
@@ -163,9 +165,7 @@ app.use((err, req, res, next) => {
         message.includes('protocol error');
 
     if (shouldRecover) {
-        recoverSystem(`express error: ${err.message}`, err).catch(recoverErr => {
-            console.error('Recovery trigger error:', recoverErr);
-        });
+        recoverSystem(`express error: ${err.message}`, err).catch(console.error);
     }
 });
 
@@ -174,20 +174,48 @@ app.use((err, req, res, next) => {
 // =========================
 const server = http.createServer(app);
 
-server.listen(PORT, async () => {
-    console.log(`🚀 Server running at ${PORT}`);
+async function registerWithRetry(publicUrl) {
+    let attempt = 0;
 
     try {
+        return await AppRegistryService.register(publicUrl);
+    } catch (err) {
+        attempt++;
+        console.error(`❌ Register failed (attempt ${attempt}):`, err.message);
+
+    }
+}
+
+async function bootstrap() {
+    console.log(`🚀 Starting server at ${PORT}`);
+
+    try {
+        // 1. init browser
         if (typeof BrowserManager.init === 'function') {
             await BrowserManager.init();
         }
-        isHealthy = true;
+
         console.log('✨ BrowserManager initialized');
+
+        // 2. start ngrok
+        const publicUrl = await TunnelService.start(PORT);
+
+        // 3. register
+        await registerWithRetry(publicUrl);
+
+        isHealthy = true;
+
+        server.listen(PORT, () => {
+            console.log(`✅ Server ready at ${PORT}`);
+        });
+
     } catch (err) {
-        isHealthy = false;
-        console.error('❌ Startup init failed:', err);
+        console.error('❌ Bootstrap failed:', err);
+        process.exit(1);
     }
-});
+}
+
+bootstrap(); // ✅ chỉ gọi 1 lần
 
 server.keepAliveTimeout = 5000;
 server.headersTimeout = 10000;
@@ -219,14 +247,10 @@ process.on('unhandledRejection', (reason) => {
     const error = safeToError(reason);
     console.error('💥 Unhandled Rejection:', error);
 
-    recoverSystem('unhandledRejection', error).catch(recoverErr => {
-        console.error('Recovery after unhandledRejection failed:', recoverErr);
-    });
+    recoverSystem('unhandledRejection', error).catch(console.error);
 });
 
 process.on('uncaughtException', async (err) => {
     console.error('💥 Uncaught Exception:', err);
-
-    // an toàn hơn là thoát process để supervisor restart
     await gracefulExit('uncaughtException');
 });
