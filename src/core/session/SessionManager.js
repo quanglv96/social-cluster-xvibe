@@ -151,12 +151,19 @@ export class SessionManager {
             console.warn('[SessionManager] Cannot close event page:', e.message);
         }
 
-        await this.#restoreRoot();
+        await this.restoreRootOnly();
+    }
+
+    static async restoreRootOnly() {
+        try {
+            await this.#restoreRoot();
+        } catch (e) {
+            console.warn('[SessionManager] restoreRootOnly error:', e.message);
+        }
 
         this.hasEvent = false;
 
         if (!this.navigator && this.rootPage && !this.rootPage.isClosed()) {
-
             this.navigator = new XvibeNavigator(
                 this.rootPage,
                 async () => this.hasEvent

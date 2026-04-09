@@ -1,7 +1,6 @@
 // core/browser/BrowserManager.js
 
 import { chromium } from 'playwright';
-import { config } from '../../config/config.js';
 
 let browser = null;
 let launching = null;
@@ -13,12 +12,10 @@ export class BrowserManager {
     // =========================
     static async getBrowser() {
 
-        // Nếu browser tồn tại và còn sống
         if (browser && browser.isConnected()) {
             return browser;
         }
 
-        // Nếu đang launch rồi → đợi
         if (launching) {
             return launching;
         }
@@ -31,40 +28,21 @@ export class BrowserManager {
         return browser;
     }
 
-    // =========================
-    // PRIVATE LAUNCH
-    // =========================
-    static async launchBrowser(profilePath) {
-        console.log('[BrowserManager] Launching new browser...');
+    static async #launchBrowser() {
+        console.log('[BrowserManager] Launch ROOT browser...');
 
-        const args = [
-            '--disable-blink-features=AutomationControlled',
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-software-rasterizer',
-            '--disable-accelerated-2d-canvas',
-            '--use-gl=swiftshader',
-            '--font-render-hinting=none',
-            '--force-device-scale-factor=1',
-        ];
-
-        const instance = await chromium.launchPersistentContext(
-            profilePath || undefined, // nếu truyền profilePath thì dùng profile riêng
-            {
-                headless: false, // bật Chrome thật
-                args,
-                viewport: { width: 1366, height: 768 },
-                userAgent:
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                locale: 'en-US',
-                timezoneId: 'Asia/Ho_Chi_Minh',
-            }
-        );
+        const instance = await chromium.launch({
+            headless: false,
+            args: [
+                '--disable-blink-features=AutomationControlled',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+            ]
+        });
 
         instance.on('disconnected', () => {
-            console.warn('[BrowserManager] Browser disconnected');
+            console.warn('[BrowserManager] ROOT browser disconnected');
             browser = null;
         });
 
@@ -89,5 +67,35 @@ export class BrowserManager {
             browser = null;
             launching = null;
         }
+    }
+
+    static async newContext(profilePath) {
+
+        if (!profilePath) {
+            throw new Error('[BrowserManager] profilePath is required');
+        }
+
+        console.log('[BrowserManager] Launch PROFILE:', profilePath);
+
+        const context = await chromium.launchPersistentContext(profilePath, {
+            headless: false,
+            args: [
+                '--disable-blink-features=AutomationControlled',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+            ],
+            viewport: { width: 1366, height: 768 },
+            userAgent:
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            locale: 'en-US',
+            timezoneId: 'Asia/Ho_Chi_Minh',
+        });
+
+        context.on('close', () => {
+            console.warn('[BrowserManager] PROFILE context closed:', profilePath);
+        });
+
+        return context;
     }
 }

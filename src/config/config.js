@@ -7,7 +7,7 @@ export const config = {
     // =============================
     // Playwright
     // =============================
-    headless: process.env.HEADLESS === 'true',
+    headless: process.env.HEADLESS === 'false',
 
     // =============================
     // API endpoints (Backend)

@@ -1,8 +1,8 @@
-import { BrowserManager } from '../browser/BrowserManager.js';
-import { FacebookAuth } from '../../auth/FacebookAuth.js';
 import { config } from '../../config/config.js';
 import path from 'path';
 import fs from 'fs';
+import {FacebookAuth} from "./FacebookAuth.js";
+import {chromium} from "playwright";
 /**
  * Pool context theo từng Facebook account (key = type).
  * Mỗi account có 1 context riêng, tái sử dụng trong lifeHours ngẫu nhiên.
@@ -18,9 +18,9 @@ export class FacebookContextPool {
     // ─────────────────────────────────────────
 
     static async getContext(dto) {
-        const key = dto.type;
+        const key = dto.user_name; // 👈 đúng
 
-        if (!key) throw new Error('[FacebookContextPool] dto.type is required');
+        if (!key) throw new Error('username is required');
 
         const entry = this.#pool.get(key);
         const expired = entry ? this.#isExpired(entry) : true;
@@ -34,7 +34,8 @@ export class FacebookContextPool {
 
     static async getRootPage(dto) {
         const context = await this.getContext(dto);
-        const key = dto.type;
+        const key = dto.user_name;
+
         const entry = this.#pool.get(key);
 
         if (!entry.rootPage || entry.rootPage.isClosed()) {
@@ -48,22 +49,32 @@ export class FacebookContextPool {
     }
 
     static async createEventPage(dto) {
+        const key = dto.user_name;
         const context = await this.getContext(dto);
-        return await context.newPage();
-    }
 
-    static async closeContext(type) {
-        const entry = this.#pool.get(type);
-        if (!entry) return;
+        const entry = this.#pool.get(key);
 
-        try {
-            await entry.context.close();
-        } catch (e) {
-            console.warn(`[FacebookContextPool] close error [${type}]:`, e.message);
+        if (!entry.eventPage || entry.eventPage.isClosed()) {
+            entry.eventPage = await context.newPage();
+
+            await entry.eventPage.goto('https://www.facebook.com/', {
+                waitUntil: 'domcontentloaded'
+            });
+
+            console.log(`[FB POOL] New eventPage created user=${key}`);
+        } else {
+            console.log(`[FB POOL] Reuse eventPage user=${key}`);
         }
 
-        this.#pool.delete(type);
-        console.log(`[FacebookContextPool] Context closed and removed [${type}]`);
+        return entry.eventPage;
+    }
+
+    static async closeContext(userName) {
+        const entry = this.#pool.get(userName);
+        if (!entry) return;
+
+        await entry.context.close();
+        this.#pool.delete(userName);
     }
 
     static poolStatus() {
@@ -85,9 +96,8 @@ export class FacebookContextPool {
     // ─────────────────────────────────────────
 
     static async #ensureInit(dto) {
-        const key = dto.type;
+        const key = dto.user_name;
 
-        // Chống race condition: nếu đang init thì chờ
         if (this.#locks.has(key)) {
             return this.#locks.get(key);
         }
@@ -103,48 +113,84 @@ export class FacebookContextPool {
     }
 
     static async #initContext(dto) {
-        const key = dto.type;
+        const key = dto.user_name;
+        const safeKey = key.replace(/[^a-zA-Z0-9]/g, '_');
 
-        console.log(`[FacebookContextPool] Initializing context [${key}]...`);
+        console.log(`[FacebookContextPool] Init user=${key}`);
 
-        // Đóng context cũ nếu có
-        const old = this.#pool.get(key);
-        if (old) {
-            try { await old.context.close(); } catch (_) {}
-        }
-
-        const browser = await BrowserManager.getBrowser();
-
-        // Rotate fingerprint nhẹ để tránh detect
-        const profileDir = path.resolve(config.facebookProfileDir, dto.accountId);
-// config.facebookProfileDir: folder lưu profiles
+        const profileDir = path.resolve(config.facebookProfileDir, safeKey);
 
         if (!fs.existsSync(profileDir)) {
             fs.mkdirSync(profileDir, { recursive: true });
         }
 
-        const context = await BrowserManager.launchBrowser(profileDir);
+        let context;
 
-        await context.addInitScript(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        });
+        try {
+            context = await chromium.launchPersistentContext(profileDir, {
+                headless: false,
+                args: [
+                    '--disable-blink-features=AutomationControlled',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox'
+                ],
+                viewport: { width: 1366, height: 768 }
+            });
 
-        // Authenticate ngay khi tạo context
-        const auth = new FacebookAuth();
-        await auth.authenticate(context, dto);
+            context.on('close', () => {
+                console.warn(`[FB CONTEXT CLOSED] ${key}`);
+                this.#pool.delete(key);
+            });
 
-        const lifeHours = this.#random(5, 24);
+            await context.addInitScript(() => {
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => false
+                });
+            });
 
-        this.#pool.set(key, {
-            context,
-            createdAt: Date.now(),
-            lifeHours,
-            rootPage: null
-        });
+            const page = await context.newPage();
 
-        console.log(
-            `[FacebookContextPool] Context ready [${key}] lifetime=${lifeHours}h`
-        );
+            await page.goto('https://www.facebook.com/', {
+                waitUntil: 'domcontentloaded'
+            });
+
+            const url = page.url();
+            const cookies = await context.cookies();
+
+            const isLoggedIn =
+                cookies.some(c => c.name === 'c_user') &&
+                !url.includes('login') &&
+                !url.includes('checkpoint');
+
+            console.log('[FB CHECK]', { url, isLoggedIn });
+
+            if (!isLoggedIn) {
+                const auth = new FacebookAuth();
+                await auth.authenticate(context, dto);
+            }
+
+            await page.close();
+
+            const old = this.#pool.get(key);
+            if (old) {
+                try { await old.context.close(); } catch (_) {}
+            }
+
+            this.#pool.set(key, {
+                context,
+                createdAt: Date.now(),
+                lifeHours: this.#random(5, 24),
+                rootPage: null
+            });
+
+            console.log(`[FacebookContextPool] READY user=${key}`);
+
+        } catch (err) {
+            if (context) {
+                try { await context.close(); } catch (_) {}
+            }
+            throw err;
+        }
     }
 
     static #isExpired(entry) {

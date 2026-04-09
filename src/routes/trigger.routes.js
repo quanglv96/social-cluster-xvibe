@@ -8,6 +8,7 @@ import {PostStoryTrigger} from "../triggers/PostStoryTrigger.js";
 import {config} from "../config/config.js";
 import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
 import {TwCrawlTrigger} from "../triggers/TwCrawlTrigger.js";
+import {FacebookContextPool} from "../core/auth/FacebookContextPool.js";
 
 const router = express.Router();
 
@@ -177,7 +178,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
         `🚀 REQUEST START`,
         `action=${actionName} activeRequests=${ACTIVE_REQUESTS} pid=${process.pid}`
     );
-
+    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB'].includes(dto.type);
     try {
         trace(
             requestId,
@@ -189,7 +190,6 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
         session = await measure(requestId, startTime, 'SessionManager.getSession()', async () => {
             return await SessionManager.getSession();
         });
-
         rootPage = session?.rootPage;
 
         trace(
@@ -220,7 +220,12 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
         if (TriggerClass.useEventPage) {
             page = await measure(requestId, startTime, 'SessionManager.createEventPage()', async () => {
-                return await SessionManager.createEventPage();
+                if (isFacebook) {
+                    page = await FacebookContextPool.createEventPage(dto);
+                } else {
+                    page = await SessionManager.createEventPage();
+                }
+                return page;
             });
 
             trace(
@@ -256,7 +261,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
         );
 
         const result = await measure(requestId, startTime, `${TriggerClass.name}.execute(dto, page)`, async () => {
-            return await trigger.execute(dto, page || rootPage);
+            return await trigger.execute(dto, page);
         });
 
         trace(
@@ -282,29 +287,26 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             let screenshotBase64 = null;
 
             if (page) {
-                try {
-                    await page.waitForLoadState('domcontentloaded').catch(() => {});
-                    await page.waitForTimeout(1000);
+                const closePageId = pageDebugId(page);
 
-                    // Debug trước khi chụp
-                    const currentUrl = page.url();
-                    const pageTitle = await page.title().catch(() => 'unknown');
-                    const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 200)).catch(() => 'unknown');
+                await measure(requestId, startTime, 'Handle event page (catch)', async () => {
+                    if (!isFacebook) {
+                        // ✅ chỉ close với non-FB
+                        await SessionManager.closeEventPage(page);
+                    } else {
+                        // 🔥 FB: KHÔNG close gì hết
+                        await SessionManager.restoreRootOnly();
+                    }
+                });
 
-                    trace(requestId, startTime, 'PAGE DEBUG', `url=${currentUrl} title=${pageTitle}`);
-                    trace(requestId, startTime, 'PAGE BODY PREVIEW', bodyText);
+                trace(
+                    requestId,
+                    startTime,
+                    `EVENT PAGE HANDLED IN CATCH`,
+                    `eventPage=${closePageId} isFacebook=${isFacebook}`
+                );
 
-                    const screenshotBuffer = await page.screenshot({
-                        fullPage: false, // ← thử false trước
-                        type: 'jpeg',
-                        quality: 80
-                    });
-                    screenshotBase64 = screenshotBuffer.toString('base64');
-                    trace(requestId, startTime, 'SCREENSHOT CAPTURED', `size=${screenshotBuffer.length} bytes`);
-
-                } catch (ssErr) {
-                    traceError(requestId, startTime, 'SCREENSHOT FAILED', ssErr);
-                }
+                page = null; // 🔥 tránh finally xử lý lại
             }
 
             await measure(requestId, startTime, 'sendErrorLog(payload)', async () => {
@@ -316,28 +318,9 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
                     ...(screenshotBase64 && { screenshot_base64: screenshotBase64 })
                 });
             });
+
         } catch (sendErr) {
             traceError(requestId, startTime, 'sendErrorLog FAILED', sendErr);
-        }
-
-        if (page) {
-            try {
-                const closePageId = pageDebugId(page);
-                await measure(requestId, startTime, 'SessionManager.closeEventPage(page) in catch', async () => {
-                    return await SessionManager.closeEventPage(page);
-                });
-                trace(
-                    requestId,
-                    startTime,
-                    `EVENT PAGE CLOSED IN CATCH`,
-                    `eventPage=${closePageId}`
-                );
-                page = null;
-            } catch (closeErr) {
-                traceError(requestId, startTime, 'Cannot close event page in catch', closeErr);
-            }
-        } else {
-            trace(requestId, startTime, `SKIP closeEventPage in catch`, `page is null`);
         }
 
         if (!res.headersSent) {
@@ -347,14 +330,9 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
                 requestId
             });
 
-            trace(
-                requestId,
-                startTime,
-                `HTTP RESPONSE SENT`,
-                `status=500`
-            );
+            trace(requestId, startTime, `HTTP RESPONSE SENT`, `status=500`);
         }
-    } finally {
+    }finally {
         trace(
             requestId,
             startTime,
@@ -363,20 +341,22 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
         );
 
         if (page) {
-            try {
-                const closePageId = pageDebugId(page);
-                await measure(requestId, startTime, 'SessionManager.closeEventPage(page) in finally', async () => {
-                    return await SessionManager.closeEventPage(page);
-                });
-                trace(
-                    requestId,
-                    startTime,
-                    `EVENT PAGE CLOSED IN FINALLY`,
-                    `eventPage=${closePageId}`
-                );
-            } catch (closeErr) {
-                traceError(requestId, startTime, 'Cannot close event page in finally', closeErr);
-            }
+            const closePageId = pageDebugId(page);
+
+            await measure(requestId, startTime, 'Handle event page (finally)', async () => {
+                if (!isFacebook) {
+                    await SessionManager.closeEventPage(page);
+                } else {
+                    await SessionManager.restoreRootOnly();
+                }
+            });
+
+            trace(
+                requestId,
+                startTime,
+                `EVENT PAGE HANDLED IN FINALLY`,
+                `eventPage=${closePageId} isFacebook=${isFacebook}`
+            );
         } else {
             trace(requestId, startTime, `SKIP closeEventPage in finally`, `page is null`);
         }
@@ -397,46 +377,13 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
         }
 
         if (SessionManager.navigator) {
-
-            trace(
-                requestId,
-                startTime,
-                'TRY START navigator (idle mode)',
-                `activeRequests=${ACTIVE_REQUESTS} queueSize=${queue.length}`
-            );
             const nextActive = ACTIVE_REQUESTS - 1;
 
             if (nextActive === 0 && queue.length === 0) {
-                trace(
-                    requestId,
-                    startTime,
-                    'START navigator in background',
-                    `non-blocking`
-                );
                 setTimeout(() => {
-                    const navStart = Date.now();
-                    SessionManager.navigator.start()
-                        .then(() => {
-                            console.log(
-                                `[${nowIso()}] [NAVIGATOR] start finished request=${requestId} duration=${Date.now() - navStart}ms`
-                            );
-                        })
-                        .catch(err => {
-                            console.error(
-                                `[${nowIso()}] [NAVIGATOR] start failed: ${err.message}`
-                            );
-                        });
+                    SessionManager.navigator.start().catch(() => {});
                 }, 0);
-            } else {
-                trace(
-                    requestId,
-                    startTime,
-                    'SKIP navigator.start()',
-                    `system not idle activeRequests=${ACTIVE_REQUESTS} queueSize=${queue.length}`
-                );
             }
-        } else {
-            trace(requestId, startTime, `SKIP navigator.start()`, `navigator is null`);
         }
 
         ACTIVE_REQUESTS--;

@@ -11,7 +11,10 @@ export class ContextFactory {
         // Facebook: dùng pool riêng theo account
         if (FB_TYPES.includes(type)) {
             const context = await FacebookContextPool.getContext(dto);
-            return {social: new FacebookSocial(context)};
+            return {
+                context,
+                social: new FacebookSocial(context)
+            };
         }
         // Lấy session đang sống (hoặc tự tạo nếu chưa có / hết hạn)
         const {context} = await SessionManager.getSession();
