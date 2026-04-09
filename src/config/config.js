@@ -20,6 +20,7 @@ export const config = {
     apiRegisterSever: process.env.API_REGISTER_SEVER,
     ngrokAuthToken: process.env.NGROK_AUTHTOKEN,
     rootUrl: process.env.ROOT_URL,
+    apiCallbackResponse: process.env.API_CALLBACK_RESPONSE,
 
     // =============================
     // Crawl settings

@@ -16,6 +16,10 @@ let ACTIVE_REQUESTS = 0;
 let EVENT_PAGE_SEQ = 0;
 let QUEUE_SIZE = 0;
 
+// =========================
+// Utils
+// =========================
+
 function nowIso() {
     return new Date().toISOString();
 }
@@ -85,9 +89,40 @@ async function measure(requestId, startTime, label, fn) {
     }
 }
 
-/* ===============================
-   SIMPLE FIFO QUEUE
-================================ */
+// =========================
+// Callback về Java
+// =========================
+
+async function sendCallback(callbackUrl, requestId, actionName, dtoType, success, data) {
+    if (!callbackUrl) {
+        console.warn(`[${nowIso()}] [CALLBACK] ⚠️ no callback_url, skip. requestId=${requestId}`);
+        return;
+    }
+    try {
+        const body = {
+            request_id: requestId,
+            type: dtoType,         // CRAWLS_FB | CRAWLS_TW | POST_GROUP_FB | POST_STORY | POST_TWEET | POST_PROFILE — Java dùng để phân loại
+            success,
+            ...data
+        };
+
+        trace(requestId, 0, '[CALLBACK] sending', `url=${callbackUrl} type=${dtoType} success=${success} request_id = ${requestId}`);
+
+        const res = await fetch(callbackUrl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+
+        trace(requestId, 0, '[CALLBACK] done', `status=${res.status}`);
+    } catch (e) {
+        console.error(`[${nowIso()}] [CALLBACK] ❌ failed: ${e.message} requestId=${requestId}`);
+    }
+}
+
+// =========================
+// FIFO Queue
+// =========================
 
 const queue = [];
 let processing = false;
@@ -101,9 +136,7 @@ function enqueue(task) {
 
 async function processQueue() {
     if (processing) return;
-
     processing = true;
-
     try {
         while (queue.length > 0) {
             const task = queue.shift();
@@ -120,37 +153,75 @@ async function processQueue() {
     }
 }
 
+// =========================
+// enqueueRequest — trả 202 ngay, xử lý ngầm
+// =========================
+
 function enqueueRequest(req, res, actionName, TriggerClass) {
-    const requestId = buildRequestId(actionName);
     const startTime = Date.now();
     const dto = req.body;
+    const requestId = dto.id;
+    console.log("enqueueRequest : " + requestId)
+
+    // Java truyền callback_url vào body hoặc header
+    const callbackUrl = config.apiCallbackResponse;
+    const dtoType = dto.type || actionName;
 
     QUEUE_SIZE++;
 
     console.log(`\n================================================================================`);
-    trace(
-        requestId,
-        startTime,
-        '📥 REQUEST ENQUEUED',
-        `action=${actionName} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS} pid=${process.pid}`
+    trace(requestId, startTime, '📥 REQUEST ENQUEUED',
+        `action=${actionName} type=${dtoType} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS} pid=${process.pid}`
     );
     trace(requestId, startTime, 'REQ BODY', safeJson(dto));
 
+    // ✅ Trả về ngay — Java không bị timeout dù crawl lâu bao nhiêu
+    res.status(202).json({
+        success: true,
+        request_id: requestId,
+        action: actionName,
+        type: dtoType,
+        message: 'queued',
+        queue_position: QUEUE_SIZE
+    });
+
+    trace(requestId, startTime, '↩️ 202 ACCEPTED SENT', `callbackUrl=${callbackUrl || 'none'}`);
+
+    // Xử lý ngầm sau khi đã trả response
     enqueue(async () => {
-        trace(
-            requestId,
-            startTime,
-            '🎯 REQUEST DEQUEUED',
+        trace(requestId, startTime, '🎯 REQUEST DEQUEUED',
             `action=${actionName} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS}`
         );
 
+        // res giả — thay HTTP response bằng callback
+        const fakeRes = {
+            headersSent: false,
+
+            json(data) {
+                this.headersSent = true;
+                sendCallback(callbackUrl, requestId, actionName, dtoType, true, data)
+                    .catch(() => {
+                    });
+            },
+
+            status(code) {
+                return {
+                    json: (data) => {
+                        fakeRes.headersSent = true;
+                        sendCallback(callbackUrl, requestId, actionName, dtoType, false, {
+                            error: data?.error,
+                            http_status: code
+                        }).catch(() => {
+                        });
+                    }
+                };
+            }
+        };
+
         try {
-            await handleRequest(req, res, actionName, TriggerClass, requestId, startTime);
+            await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime);
         } finally {
-            trace(
-                requestId,
-                startTime,
-                '📤 REQUEST REMOVED FROM QUEUE',
+            trace(requestId, startTime, '📤 REQUEST REMOVED FROM QUEUE',
                 `action=${actionName} queueSize=${Math.max(QUEUE_SIZE - 1, 0)} activeRequests=${ACTIVE_REQUESTS}`
             );
             console.log(`================================================================================\n`);
@@ -158,9 +229,9 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
     });
 }
 
-/* ===============================
-   COMMON HANDLER TEMPLATE
-================================ */
+// =========================
+// handleRequest — không đổi logic, chỉ dùng fakeRes
+// =========================
 
 async function handleRequest(req, res, actionName, TriggerClass, requestId, startTime) {
     const dto = req.body;
@@ -172,18 +243,14 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
     let resultFactory;
 
     ACTIVE_REQUESTS++;
-    trace(
-        requestId,
-        startTime,
-        `🚀 REQUEST START`,
+    trace(requestId, startTime, `🚀 REQUEST START`,
         `action=${actionName} activeRequests=${ACTIVE_REQUESTS} pid=${process.pid}`
     );
+
     const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB'].includes(dto.type);
+
     try {
-        trace(
-            requestId,
-            startTime,
-            `CHECK PRE STATE`,
+        trace(requestId, startTime, `CHECK PRE STATE`,
             `hasEvent=${SessionManager.hasEvent} navigatorExists=${!!SessionManager.navigator}`
         );
 
@@ -192,10 +259,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
         });
         rootPage = session?.rootPage;
 
-        trace(
-            requestId,
-            startTime,
-            `SESSION READY`,
+        trace(requestId, startTime, `SESSION READY`,
             `rootPage=${pageDebugId(rootPage, 'ROOT_NULL')}`
         );
 
@@ -203,10 +267,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             SessionManager.hasEvent = true;
         });
 
-        trace(
-            requestId,
-            startTime,
-            `SESSION FLAG UPDATED`,
+        trace(requestId, startTime, `SESSION FLAG UPDATED`,
             `hasEvent=${SessionManager.hasEvent}`
         );
 
@@ -228,10 +289,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
                 return page;
             });
 
-            trace(
-                requestId,
-                startTime,
-                `EVENT PAGE CREATED`,
+            trace(requestId, startTime, `EVENT PAGE CREATED`,
                 `eventPage=${pageDebugId(page)}`
             );
         } else {
@@ -242,10 +300,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             return await ContextFactory.create(dto);
         });
 
-        trace(
-            requestId,
-            startTime,
-            `CONTEXT FACTORY READY`,
+        trace(requestId, startTime, `CONTEXT FACTORY READY`,
             `social=${resultFactory?.social?.constructor?.name || 'unknown'}`
         );
 
@@ -253,10 +308,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             return new TriggerClass(resultFactory.social);
         });
 
-        trace(
-            requestId,
-            startTime,
-            `TRIGGER READY`,
+        trace(requestId, startTime, `TRIGGER READY`,
             `trigger=${TriggerClass.name} executePage=${pageDebugId(page || rootPage, 'NO_PAGE')}`
         );
 
@@ -264,21 +316,17 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             return await trigger.execute(dto, page);
         });
 
-        trace(
-            requestId,
-            startTime,
-            `TRIGGER EXECUTED SUCCESS`,
+        trace(requestId, startTime, `TRIGGER EXECUTED SUCCESS`,
             `pageUsed=${pageDebugId(page || rootPage, 'NO_PAGE')}`
         );
 
-        res.json({success: true, request_id: requestId, value: result?.images?.length ?? 0});
+        res.json({
+            success: true,
+            request_id: requestId,
+            value: result?.images?.length ?? 0
+        });
 
-        trace(
-            requestId,
-            startTime,
-            `HTTP RESPONSE SENT`,
-            `status=200`
-        );
+        trace(requestId, startTime, `HTTP RESPONSE SENT`, `status=200`);
 
     } catch (err) {
         traceError(requestId, startTime, 'HANDLE REQUEST FAILED', err);
@@ -291,22 +339,17 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
                 await measure(requestId, startTime, 'Handle event page (catch)', async () => {
                     if (!isFacebook) {
-                        // ✅ chỉ close với non-FB
                         await SessionManager.closeEventPage(page);
                     } else {
-                        // 🔥 FB: KHÔNG close gì hết
                         await SessionManager.restoreRootOnly();
                     }
                 });
 
-                trace(
-                    requestId,
-                    startTime,
-                    `EVENT PAGE HANDLED IN CATCH`,
+                trace(requestId, startTime, `EVENT PAGE HANDLED IN CATCH`,
                     `eventPage=${closePageId} isFacebook=${isFacebook}`
                 );
 
-                page = null; // 🔥 tránh finally xử lý lại
+                page = null;
             }
 
             await measure(requestId, startTime, 'sendErrorLog(payload)', async () => {
@@ -315,7 +358,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
                     error_message: err.message,
                     request_id: requestId,
                     action: actionName,
-                    ...(screenshotBase64 && { screenshot_base64: screenshotBase64 })
+                    ...(screenshotBase64 && {screenshot_base64: screenshotBase64})
                 });
             });
 
@@ -332,11 +375,9 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
             trace(requestId, startTime, `HTTP RESPONSE SENT`, `status=500`);
         }
-    }finally {
-        trace(
-            requestId,
-            startTime,
-            `ENTER FINALLY`,
+
+    } finally {
+        trace(requestId, startTime, `ENTER FINALLY`,
             `page=${pageDebugId(page, 'NULL')} hasEvent(before)=${SessionManager.hasEvent}`
         );
 
@@ -351,10 +392,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
                 }
             });
 
-            trace(
-                requestId,
-                startTime,
-                `EVENT PAGE HANDLED IN FINALLY`,
+            trace(requestId, startTime, `EVENT PAGE HANDLED IN FINALLY`,
                 `eventPage=${closePageId} isFacebook=${isFacebook}`
             );
         } else {
@@ -366,10 +404,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
                 SessionManager.hasEvent = false;
             });
 
-            trace(
-                requestId,
-                startTime,
-                `SESSION FLAG RESET`,
+            trace(requestId, startTime, `SESSION FLAG RESET`,
                 `hasEvent=${SessionManager.hasEvent}`
             );
         } catch (err) {
@@ -378,23 +413,24 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
         if (SessionManager.navigator) {
             const nextActive = ACTIVE_REQUESTS - 1;
-
             if (nextActive === 0 && queue.length === 0) {
                 setTimeout(() => {
-                    SessionManager.navigator.start().catch(() => {});
+                    SessionManager.navigator.start().catch(() => {
+                    });
                 }, 0);
             }
         }
 
         ACTIVE_REQUESTS--;
-        trace(
-            requestId,
-            startTime,
-            `🏁 REQUEST END`,
+        trace(requestId, startTime, `🏁 REQUEST END`,
             `action=${actionName} total=${elapsed(startTime)}ms activeRequests=${ACTIVE_REQUESTS}`
         );
     }
 }
+
+// =========================
+// sendErrorLog
+// =========================
 
 async function sendErrorLog(payload) {
     try {
@@ -411,9 +447,9 @@ async function sendErrorLog(payload) {
     }
 }
 
-/* ===============================
-   ROUTES
-================================ */
+// =========================
+// Routes
+// =========================
 
 router.post('/trigger-fb-crawl', (req, res) =>
     enqueueRequest(req, res, 'FB_CRAWL', FbCrawlTrigger)
@@ -466,29 +502,19 @@ router.post('/bot/wakeup', async (req, res) => {
         res.status(500).json({status: 'error', error: err.message, requestId});
     }
 });
+
 router.post('/bot/force-logout', async (req, res) => {
     const requestId = buildRequestId('FORCE_LOGOUT');
     const startTime = Date.now();
-
     try {
         trace(requestId, startTime, 'FORCE LOGOUT START');
-
         await SessionManager.forceLogout('manual_trigger');
-
         trace(requestId, startTime, 'FORCE LOGOUT DONE');
-
-        res.json({
-            success: true,
-            requestId
-        });
+        res.json({success: true, requestId});
     } catch (err) {
         traceError(requestId, startTime, 'FORCE LOGOUT FAILED', err);
-
-        res.status(500).json({
-            success: false,
-            error: err.message,
-            requestId
-        });
+        res.status(500).json({success: false, error: err.message, requestId});
     }
 });
+
 export default router;

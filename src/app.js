@@ -12,7 +12,7 @@ const MAX_ACTIVE_REQUESTS = Number(process.env.MAX_ACTIVE_REQUESTS || 20);
 const RECOVERY_WAIT_TIMEOUT_MS = Number(process.env.RECOVERY_WAIT_TIMEOUT_MS || 10000);
 
 let isRecovering = false;
-let isHealthy = false; // ❗ chưa healthy cho đến khi bootstrap xong
+let isHealthy = false;
 let activeRequests = 0;
 let recoveryPromise = null;
 
@@ -34,7 +34,6 @@ function safeToError(value) {
 
 async function waitForActiveRequestsToDrain(timeoutMs = RECOVERY_WAIT_TIMEOUT_MS) {
     const start = Date.now();
-
     while (activeRequests > 0) {
         if (Date.now() - start >= timeoutMs) {
             console.warn(`⚠️ Timeout waiting active requests drain. Remaining=${activeRequests}`);
@@ -42,7 +41,6 @@ async function waitForActiveRequestsToDrain(timeoutMs = RECOVERY_WAIT_TIMEOUT_MS
         }
         await sleep(200);
     }
-
     return true;
 }
 
@@ -58,11 +56,8 @@ async function recoverSystem(reason, error = null) {
     recoveryPromise = (async () => {
         isRecovering = true;
         isHealthy = false;
-
         console.log(`🔄 Start recovery: ${reason}`);
-        if (error) {
-            console.error('Recovery cause:', error);
-        }
+        if (error) console.error('Recovery cause:', error);
 
         try {
             await waitForActiveRequestsToDrain();
@@ -106,11 +101,7 @@ app.use((req, res, next) => {
 
     if (activeRequests >= MAX_ACTIVE_REQUESTS) {
         console.warn(`⚠️ Overload detected. activeRequests=${activeRequests}/${MAX_ACTIVE_REQUESTS}`);
-
-        recoverSystem('overload').catch(err => {
-            console.error('Recovery trigger error:', err);
-        });
-
+        recoverSystem('overload').catch(err => console.error('Recovery trigger error:', err));
         return res.status(503).json({
             success: false,
             error: 'Server overloaded, recovery triggered'
@@ -139,10 +130,7 @@ app.use((req, res, next) => {
 app.use('', triggerRoutes);
 
 app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        error: 'Route not found'
-    });
+    res.status(404).json({success: false, error: 'Route not found'});
 });
 
 app.use((err, req, res, next) => {
@@ -174,15 +162,16 @@ app.use((err, req, res, next) => {
 // =========================
 const server = http.createServer(app);
 
+server.keepAliveTimeout = 5000;
+server.headersTimeout = 10000;
+
 async function registerWithRetry(publicUrl) {
     let attempt = 0;
-
     try {
         return await AppRegistryService.register(publicUrl);
     } catch (err) {
         attempt++;
         console.error(`❌ Register failed (attempt ${attempt}):`, err.message);
-
     }
 }
 
@@ -194,20 +183,25 @@ async function bootstrap() {
         if (typeof BrowserManager.init === 'function') {
             await BrowserManager.init();
         }
-
         console.log('✨ BrowserManager initialized');
 
-        // 2. start ngrok
+        // 2. server listen trước
+        await new Promise((resolve, reject) => {
+            server.listen(PORT, (err) => {
+                if (err) return reject(err);
+                console.log(`✅ Server listening at ${PORT}`);
+                resolve();
+            });
+        });
+
+        // 3. mở tunnel sau khi port đã listen
         const publicUrl = await TunnelService.start(PORT);
 
-        // 3. register
+        // 4. register
         await registerWithRetry(publicUrl);
 
         isHealthy = true;
-
-        server.listen(PORT, () => {
-            console.log(`✅ Server ready at ${PORT}`);
-        });
+        console.log('🎉 Bootstrap complete');
 
     } catch (err) {
         console.error('❌ Bootstrap failed:', err);
@@ -215,38 +209,56 @@ async function bootstrap() {
     }
 }
 
-bootstrap(); // ✅ chỉ gọi 1 lần
-
-server.keepAliveTimeout = 5000;
-server.headersTimeout = 10000;
 
 // =========================
 // Process handlers
 // =========================
+
+let isExiting = false;
+
 async function gracefulExit(signal) {
-    console.log(`👋 Received ${signal}`);
+    console.log("gracefulExit");
+    // ✅ chống gọi nhiều lần (Ctrl+C liên tiếp)
+    if (isExiting) return;
+    isExiting = true;
+
+    console.log(`\n👋 Received ${signal} — shutting down...`);
+
+    isRecovering = true;
+    isHealthy = false;
+
+    // ✅ force exit sau 5s phòng trường hợp cleanup bị treo
+    const forceTimer = setTimeout(() => {
+        console.warn('⚠️ Force exit after 5s timeout');
+        process.exit(1);
+    }, 5000);
+    forceTimer.unref(); // không giữ process sống chỉ vì timer này
 
     try {
-        isRecovering = true;
-        isHealthy = false;
+        // ✅ dừng tunnel — quan trọng, nếu thiếu SSH process còn sống
+        await TunnelService.stop();
+
+        // dừng browser
         await BrowserManager.closeAll();
+
     } catch (err) {
         console.error(`Error on ${signal} cleanup:`, err);
-    } finally {
-        server.close(() => {
-            console.log('✅ Server closed');
-            process.exit(0);
-        });
     }
+
+    // đóng HTTP server, không nhận request mới
+    server.close(() => {
+        clearTimeout(forceTimer);
+        console.log('✅ Server closed — bye!');
+        process.exit(0);
+    });
 }
 
-process.on('SIGTERM', () => gracefulExit('SIGTERM'));
-process.on('SIGINT', () => gracefulExit('SIGINT'));
+process.on('SIGINT',  () => gracefulExit('SIGINT'));   // Ctrl+C
+process.on('SIGTERM', () => gracefulExit('SIGTERM'));  // docker stop / kill
 
 process.on('unhandledRejection', (reason) => {
     const error = safeToError(reason);
     console.error('💥 Unhandled Rejection:', error);
-
     recoverSystem('unhandledRejection', error).catch(console.error);
 });
 
@@ -254,3 +266,6 @@ process.on('uncaughtException', async (err) => {
     console.error('💥 Uncaught Exception:', err);
     await gracefulExit('uncaughtException');
 });
+
+
+bootstrap();
