@@ -1,4 +1,4 @@
-import {config} from "../../../config/config.js";
+import {config, runtimeConfig} from "../../../config/config.js";
 
 export class FacebookCrawler {
 
@@ -52,7 +52,7 @@ export class FacebookCrawler {
             const images = [];
             let newLastUrl = last_image;
 
-            const MAX_IMAGES = config.maxImages;
+            const MAX_IMAGES = runtimeConfig.maxImages;
             while (images.length < MAX_IMAGES) {
 
                 console.log(

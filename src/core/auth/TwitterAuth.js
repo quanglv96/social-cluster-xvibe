@@ -1,6 +1,6 @@
 import {BaseAuth} from './BaseAuth.js';
 import axios from "axios";
-import {config} from "../../config/config.js";
+import {config, runtimeConfig} from "../../config/config.js";
 
 export class TwitterAuth extends BaseAuth {
 
@@ -313,7 +313,7 @@ export class TwitterAuth extends BaseAuth {
                 // 👉 SAVE COOKIE
                 const newCookies = await context.cookies();
 
-                await axios.post(`${config.updateCookie}`, {
+                await axios.post(`${runtimeConfig.api.apiUpdateCookie}`, {
                     type: dto.type,
                     cookie: JSON.stringify(newCookies)
                 });

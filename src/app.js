@@ -4,6 +4,8 @@ import triggerRoutes from './routes/trigger.routes.js';
 import {BrowserManager} from './core/browser/BrowserManager.js';
 import {AppRegistryService} from "./AppRegistryService.js";
 import {TunnelService} from "./TunnelService.js";
+import os from 'os';
+import {runtimeConfig} from "./config/config.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -109,12 +111,32 @@ app.use((req, res, next) => {
     }
 
     activeRequests++;
+    // 🔥 tạo task id
+    const taskId = `task_${Date.now()}_${req.body.type}_${req.body.scheduler_id}`;
+
+    // 🔥 push vào queue
+    queue.push(taskId);
+
+    activeRequests++;
+
+    // 🔥 move sang processing
+    processing.set(taskId, {
+        url: req.originalUrl,
+        start: Date.now()
+    });
+
 
     let released = false;
     const release = () => {
         if (!released) {
             released = true;
             activeRequests = Math.max(0, activeRequests - 1);
+
+            // 🔥 remove khỏi processing
+            processing.delete(taskId);
+
+            // 🔥 remove khỏi queue
+            queue = queue.filter(q => q !== taskId);
         }
     };
 
@@ -176,8 +198,9 @@ async function registerWithRetry(publicUrl) {
 }
 
 async function bootstrap() {
+    sendToUI('status', 'RUNNING');
     console.log(`🚀 Starting server at ${PORT}`);
-
+    console.log("🔥 CURRENT CONFIG:", JSON.stringify(runtimeConfig, null, 2));
     try {
         // 1. init browser
         if (typeof BrowserManager.init === 'function') {
@@ -251,6 +274,8 @@ async function gracefulExit(signal) {
         console.log('✅ Server closed — bye!');
         process.exit(0);
     });
+    sendToUI('status', 'STOPPED');
+
 }
 
 process.on('SIGINT',  () => gracefulExit('SIGINT'));   // Ctrl+C
@@ -267,5 +292,83 @@ process.on('uncaughtException', async (err) => {
     await gracefulExit('uncaughtException');
 });
 
+function sendToUI(type, data) {
+    if (process.send) {
+        process.send({ type, data });
+    }
+}
 
+// override console.log để đẩy lên UI
+const originalLog = console.log;
+console.log = (...args) => {
+    const msg = args.join(' ');
+    originalLog(msg);
+    sendToUI('log', msg);
+};
+
+process.on('message', async (msg) => {
+    if (!msg) return;
+
+    if (msg.type === 'CONFIG_UPDATE') {
+        const { updateConfig } = await import('./config/config.js');
+
+        const needRestart =
+            msg.payload.rootUrl ||
+            msg.payload.apiImportImage ||
+            msg.payload.apiUpdatePage;
+
+        updateConfig(msg.payload);
+
+        console.log('⚡ Config updated from UI');
+
+        if (needRestart) {
+            console.log('🔁 Critical config changed → restarting...');
+            await gracefulExit('CONFIG_CHANGE');
+            process.exit(0);
+        }
+    }
+
+    if (msg.type === 'CONTROL') {
+        if (msg.cmd === 'stop') {
+            await gracefulExit('UI_STOP');
+        }
+
+        if (msg.cmd === 'restart') {
+            await gracefulExit('UI_RESTART');
+            process.exit(0);
+        }
+    }
+});
+
+
+let errorCount = 0;
+let queue = [];
+let processing = new Map(); // track request đang chạy
+export function reportError() {
+    errorCount++;
+    console.log("reportError errorCount" + errorCount);
+}
+
+setInterval(() => {
+    const cpuLoad = os.loadavg()[0] || 0;
+    const memory = Math.round(process.memoryUsage().rss / 1024 / 1024);
+
+    sendToUI('stats', {
+        cpu: cpuLoad.toFixed(2),
+        memory,
+        requests: activeRequests,
+        error: errorCount
+    });
+
+    sendToUI('queue', queue.map(id => {
+        const p = processing.get(id);
+
+        return {
+            id,
+            url: p?.url,
+            duration: p ? (Date.now() - p.start) : 0
+        };
+    }));
+
+}, 1000);
 bootstrap();

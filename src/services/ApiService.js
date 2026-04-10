@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { config } from '../config/config.js';
+import { runtimeConfig} from '../config/config.js';
 import FormData from 'form-data';
 
 export class ApiService {
@@ -12,7 +12,7 @@ export class ApiService {
             contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         });
 
-        await axios.post(config.apiImportImage, formData, {
+        await axios.post(runtimeConfig.api.apiImportImage, formData, {
             headers: {
                 ...formData.getHeaders()
             }
@@ -21,7 +21,7 @@ export class ApiService {
 
     static async updatePageCheckpoint(id, newLastUrl) {
 
-        await axios.post(config.apiUpdatePage, {
+        await axios.post(runtimeConfig.api.apiUpdatePage, {
             id: id,
             last_image: newLastUrl
         });

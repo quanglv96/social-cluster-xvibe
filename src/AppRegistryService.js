@@ -1,11 +1,11 @@
-import { config } from "./config/config.js";
+import {runtimeConfig} from "./config/config.js";
 
 export class AppRegistryService {
 
     static async register(publicUrl) {
-        const url = config.apiRegisterSever;
+        const url = runtimeConfig.api.apiRegisterSever;
 
-        console.log('📡 Registering app with backend...');
+        console.log('📡 Registering app with backend: ' + url);
 
         const res = await fetch(url, {
             method: 'POST',

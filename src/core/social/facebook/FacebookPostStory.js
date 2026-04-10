@@ -4,7 +4,7 @@ import path from 'path';
 import os from 'os';
 
 import {DelayService} from '../../../services/delay.service.js';
-import {config} from "../../../config/config.js";
+import {config, runtimeConfig} from "../../../config/config.js";
 
 export class FacebookPostStory {
 
@@ -156,7 +156,7 @@ export class FacebookPostStory {
 
             await this.uploadStoryByDrop(page, filePaths[i]);
             if (mode === 'page') {
-                await this.addLinkButton(page, `${config.rootUrl}`);
+                await this.addLinkButton(page, `${runtimeConfig.rootUrl}`);
             }
             await this.shareStory(page);
 

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import {config} from "../config/config.js";
+import {config, runtimeConfig} from "../config/config.js";
 
 export async function logCheckpoint(page, {
     step = 'unknown',
@@ -27,7 +27,7 @@ export async function logCheckpoint(page, {
             metadata: base64 // 👈 trực tiếp base64
         };
 
-        await axios.post(config.apiLogCheckPoint, payload, {
+        await axios.post(runtimeConfig.api.apiLogCheckPoint, payload, {
             timeout: 10000
         });
 

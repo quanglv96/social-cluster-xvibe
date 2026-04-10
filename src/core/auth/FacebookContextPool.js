@@ -1,4 +1,4 @@
-import { config } from '../../config/config.js';
+import {config, runtimeConfig} from '../../config/config.js';
 import path from 'path';
 import fs from 'fs';
 import {FacebookAuth} from "./FacebookAuth.js";
@@ -40,7 +40,7 @@ export class FacebookContextPool {
 
         if (!entry.rootPage || entry.rootPage.isClosed()) {
             entry.rootPage = await context.newPage();
-            await entry.rootPage.goto(config.rootUrl, {
+            await entry.rootPage.goto(runtimeConfig.rootUrl, {
                 waitUntil: 'domcontentloaded'
             });
         }
@@ -118,7 +118,7 @@ export class FacebookContextPool {
 
         console.log(`[FacebookContextPool] Init user=${key}`);
 
-        const profileDir = path.resolve(config.facebookProfileDir, safeKey);
+        const profileDir = path.resolve(runtimeConfig.facebookProfileDir, safeKey);
 
         if (!fs.existsSync(profileDir)) {
             fs.mkdirSync(profileDir, { recursive: true });

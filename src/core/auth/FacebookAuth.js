@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { config } from '../../config/config.js';
+import {config, runtimeConfig} from '../../config/config.js';
 import { BaseAuth } from './BaseAuth.js';
 
 export class FacebookAuth extends BaseAuth {
@@ -94,7 +94,7 @@ export class FacebookAuth extends BaseAuth {
 
             const newCookies = await context.cookies();
 
-            await axios.post(`${config.updateCookie}`, {
+            await axios.post(`${runtimeConfig.api.apiUpdateCookie}`, {
                 type: type,
                 cookie: JSON.stringify(newCookies)
             });

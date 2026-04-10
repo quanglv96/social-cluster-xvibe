@@ -1,6 +1,6 @@
 import {BrowserManager} from '../browser/BrowserManager.js';
 import {XvibeNavigator} from "../social/XvibeNavigator.js";
-import {config} from "../../config/config.js";
+import {config, runtimeConfig} from "../../config/config.js";
 
 export class SessionManager {
 
@@ -119,7 +119,7 @@ export class SessionManager {
     }
 
     static async #gotoRoot() {
-        await this.rootPage.goto(`${config.rootUrl}`, {
+        await this.rootPage.goto(`${runtimeConfig.rootUrl}`, {
             waitUntil: 'domcontentloaded'
         });
     }
