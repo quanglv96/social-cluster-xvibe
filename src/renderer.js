@@ -1,11 +1,32 @@
 const { ipcRenderer } = require('electron');
+const LOG_ICON = {
+    info:  { icon: 'ℹ',  cls: 'log-info'  },
+    warn:  { icon: '⚠',  cls: 'log-warn'  },
+    error: { icon: '✖',  cls: 'log-error' },
+    ok:    { icon: '✔',  cls: 'log-ok'    },
+};
+function appendLog({ type = 'info', msg = '' }) {
+    const logEl = document.getElementById('log');
+    const meta  = LOG_ICON[type] ?? LOG_ICON.info;
 
-function appendLog(msg) {
-    const log = document.getElementById('log');
-    const div = document.createElement('div');
-    div.textContent = msg;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
+    // parse timestamp ra nếu có — format: [2024-...Z]
+    let ts = '', body = msg;
+    const tsMatch = msg.match(/^\[([^\]]+)\]\s*/);
+    if (tsMatch) {
+        ts   = tsMatch[1].slice(11, 19); // chỉ lấy HH:mm:ss
+        body = msg.slice(tsMatch[0].length);
+    }
+
+    const line = document.createElement('div');
+    line.className = `log-line ${meta.cls}`;
+    line.innerHTML = `
+        <span class="log-icon">${meta.icon}</span>
+        <span class="log-ts">${ts}</span>
+        <span class="log-msg">${body}</span>
+    `;
+
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
 }
 
 // ======================
@@ -23,7 +44,11 @@ window.save = () => {
 // ======================
 // RECEIVE DATA
 // ======================
-ipcRenderer.on("log", (_, msg) => appendLog(msg));
+ipcRenderer.on("log", (_, payload) => {
+    // backward-compat: nếu main cũ vẫn gửi string thuần
+    if (typeof payload === 'string') return appendLog({ type: 'info', msg: payload });
+    appendLog(payload);
+});
 
 ipcRenderer.on("stats", (_, data) => {
     document.getElementById("cpu").innerText = data.cpu + "%";

@@ -1,48 +1,96 @@
-import {config, runtimeConfig} from '../../config/config.js';
+import { config, runtimeConfig } from '../../config/config.js';
 import path from 'path';
 import fs from 'fs';
-import {FacebookAuth} from "./FacebookAuth.js";
-import {chromium} from "playwright";
-/**
- * Pool context theo từng Facebook account (key = type).
- * Mỗi account có 1 context riêng, tái sử dụng trong lifeHours ngẫu nhiên.
- */
+import { FacebookAuth } from "./FacebookAuth.js";
+import { chromium } from "playwright";
+
+// =========================
+// Log Utils (chuẩn hệ thống)
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(requestId, message, fields = {}) {
+    const fieldStr = Object.entries(fields)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(' ');
+
+    return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
+}
+
+function log(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(requestId, message, err, fields = {}) {
+    const msg = formatMsg(requestId, `❌ ${message}`, {
+        ...fields,
+        error: err?.message || err
+    });
+    sendToRenderer('error', msg);
+}
+
+function logOk(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+// Class
+// =========================
+
+const TAG = 'FB_POOL';
+
 export class FacebookContextPool {
 
-    // Map<type, { context, createdAt, lifeHours, rootPage }>
     static #pool = new Map();
-    static #locks = new Map(); // chống race condition khi init
-
-    // ─────────────────────────────────────────
-    // PUBLIC
-    // ─────────────────────────────────────────
+    static #locks = new Map();
 
     static async getContext(dto) {
-        const key = dto.user_name; // 👈 đúng
+        const key = dto.user_name;
+        const requestId = `${TAG}_${key}`;
 
         if (!key) throw new Error('username is required');
 
         const entry = this.#pool.get(key);
-        const expired = entry ? this.#isExpired(entry) : true;
+        const expired = entry ? this.#isExpired(entry, requestId) : true;
 
         if (!entry || expired) {
-            await this.#ensureInit(dto);
+            await this.#ensureInit(dto, requestId);
         }
 
         return this.#pool.get(key).context;
     }
 
     static async getRootPage(dto) {
-        const context = await this.getContext(dto);
         const key = dto.user_name;
+        const requestId = `${TAG}_${key}`;
 
+        const context = await this.getContext(dto);
         const entry = this.#pool.get(key);
 
         if (!entry.rootPage || entry.rootPage.isClosed()) {
+            log(requestId, 'Creating rootPage');
+
             entry.rootPage = await context.newPage();
             await entry.rootPage.goto(runtimeConfig.rootUrl, {
                 waitUntil: 'domcontentloaded'
             });
+
+        } else {
+            log(requestId, 'Reusing rootPage');
         }
 
         return entry.rootPage;
@@ -50,59 +98,46 @@ export class FacebookContextPool {
 
     static async createEventPage(dto) {
         const key = dto.user_name;
-        const context = await this.getContext(dto);
+        const requestId = `${TAG}_${key}`;
 
+        const context = await this.getContext(dto);
         const entry = this.#pool.get(key);
 
         if (!entry.eventPage || entry.eventPage.isClosed()) {
             entry.eventPage = await context.newPage();
-
             await entry.eventPage.goto('https://www.facebook.com/', {
                 waitUntil: 'domcontentloaded'
             });
 
-            console.log(`[FB POOL] New eventPage created user=${key}`);
+            logOk(requestId, 'eventPage created');
+
         } else {
-            console.log(`[FB POOL] Reuse eventPage user=${key}`);
+            log(requestId, 'eventPage reused');
         }
 
         return entry.eventPage;
     }
 
     static async closeContext(userName) {
+        const requestId = `${TAG}_${userName}`;
         const entry = this.#pool.get(userName);
         if (!entry) return;
 
         await entry.context.close();
         this.#pool.delete(userName);
+
+        logWarn(requestId, 'Context closed manually');
     }
 
-    static poolStatus() {
-        const result = {};
-        for (const [key, entry] of this.#pool.entries()) {
-            result[key] = {
-                createdAt: new Date(entry.createdAt).toISOString(),
-                lifeHours: entry.lifeHours,
-                expiredIn: Math.round(
-                    (entry.createdAt + entry.lifeHours * 3600_000 - Date.now()) / 60_000
-                ) + 'min'
-            };
-        }
-        return result;
-    }
-
-    // ─────────────────────────────────────────
-    // PRIVATE
-    // ─────────────────────────────────────────
-
-    static async #ensureInit(dto) {
+    static async #ensureInit(dto, requestId) {
         const key = dto.user_name;
 
         if (this.#locks.has(key)) {
+            log(requestId, 'Waiting for existing init lock');
             return this.#locks.get(key);
         }
 
-        const promise = this.#initContext(dto);
+        const promise = this.#initContext(dto, requestId);
         this.#locks.set(key, promise);
 
         try {
@@ -112,11 +147,11 @@ export class FacebookContextPool {
         }
     }
 
-    static async #initContext(dto) {
+    static async #initContext(dto, requestId) {
         const key = dto.user_name;
         const safeKey = key.replace(/[^a-zA-Z0-9]/g, '_');
 
-        console.log(`[FacebookContextPool] Init user=${key}`);
+        log(requestId, 'Init context');
 
         const profileDir = path.resolve(runtimeConfig.facebookProfileDir, safeKey);
 
@@ -138,7 +173,7 @@ export class FacebookContextPool {
             });
 
             context.on('close', () => {
-                console.warn(`[FB CONTEXT CLOSED] ${key}`);
+                logWarn(requestId, 'Context closed unexpectedly');
                 this.#pool.delete(key);
             });
 
@@ -162,9 +197,10 @@ export class FacebookContextPool {
                 !url.includes('login') &&
                 !url.includes('checkpoint');
 
-            console.log('[FB CHECK]', { url, isLoggedIn });
+            log(requestId, 'Login check', { url, isLoggedIn });
 
             if (!isLoggedIn) {
+                logWarn(requestId, 'Not logged in → run auth');
                 const auth = new FacebookAuth();
                 await auth.authenticate(context, dto);
             }
@@ -176,16 +212,19 @@ export class FacebookContextPool {
                 try { await old.context.close(); } catch (_) {}
             }
 
+            const lifeHours = this.#random(5, 24);
+
             this.#pool.set(key, {
                 context,
                 createdAt: Date.now(),
-                lifeHours: this.#random(5, 24),
+                lifeHours,
                 rootPage: null
             });
 
-            console.log(`[FacebookContextPool] READY user=${key}`);
+            logOk(requestId, 'Context ready', { lifeHours });
 
         } catch (err) {
+            logError(requestId, 'Init context failed', err);
             if (context) {
                 try { await context.close(); } catch (_) {}
             }
@@ -193,34 +232,18 @@ export class FacebookContextPool {
         }
     }
 
-    static #isExpired(entry) {
+    static #isExpired(entry, requestId) {
         const maxLife = entry.lifeHours * 3600_000;
         const expired = Date.now() - entry.createdAt > maxLife;
-        if (expired) console.log('[FacebookContextPool] Context expired, reinit...');
+
+        if (expired) {
+            logWarn(requestId, 'Context expired → reinit');
+        }
+
         return expired;
     }
 
     static #random(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-
-    static #randomViewport() {
-        const sizes = [
-            { width: 1366, height: 768 },
-            { width: 1440, height: 900 },
-            { width: 1536, height: 864 },
-            { width: 1920, height: 1080 },
-        ];
-        return sizes[Math.floor(Math.random() * sizes.length)];
-    }
-
-    static #randomUserAgent() {
-        const agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-        ];
-        return agents[Math.floor(Math.random() * agents.length)];
     }
 }

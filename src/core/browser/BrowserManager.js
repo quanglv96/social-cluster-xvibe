@@ -2,6 +2,45 @@
 
 import { chromium } from 'playwright';
 
+// =========================
+// Log Utils
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(module, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${module}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
+}
+
+function log(module, message, fields = {}) {
+    const msg = formatMsg(module, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(module, message, fields = {}) {
+    const msg = formatMsg(module, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(module, message, fields = {}) {
+    const msg = formatMsg(module, `❌ ${message}`, fields);
+    sendToRenderer('error', msg);
+}
+
+function logOk(module, message, fields = {}) {
+    const msg = formatMsg(module, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+
 let browser = null;
 let launching = null;
 
@@ -11,7 +50,6 @@ export class BrowserManager {
     // GET BROWSER (safe)
     // =========================
     static async getBrowser() {
-
         if (browser && browser.isConnected()) {
             return browser;
         }
@@ -21,7 +59,6 @@ export class BrowserManager {
         }
 
         launching = this.#launchBrowser();
-
         browser = await launching;
         launching = null;
 
@@ -29,7 +66,7 @@ export class BrowserManager {
     }
 
     static async #launchBrowser() {
-        console.log('[BrowserManager] Launch ROOT browser...');
+        log('BROWSER', '🚀 launching root browser');
 
         const instance = await chromium.launch({
             headless: false,
@@ -42,10 +79,11 @@ export class BrowserManager {
         });
 
         instance.on('disconnected', () => {
-            console.warn('[BrowserManager] ROOT browser disconnected');
+            logWarn('BROWSER', 'root browser disconnected');
             browser = null;
         });
 
+        logOk('BROWSER', 'root browser launched');
         return instance;
     }
 
@@ -53,16 +91,15 @@ export class BrowserManager {
     // CLOSE ALL
     // =========================
     static async closeAll() {
-
         if (!browser) return;
 
         try {
             if (browser.isConnected()) {
                 await browser.close();
-                console.log('[BrowserManager] Browser closed');
+                logOk('BROWSER', 'closed');
             }
         } catch (err) {
-            console.error('[BrowserManager] Error closing browser:', err);
+            logError('BROWSER', 'error closing browser', { error: err.message });
         } finally {
             browser = null;
             launching = null;
@@ -70,12 +107,11 @@ export class BrowserManager {
     }
 
     static async newContext(profilePath) {
-
         if (!profilePath) {
             throw new Error('[BrowserManager] profilePath is required');
         }
 
-        console.log('[BrowserManager] Launch PROFILE:', profilePath);
+        log('BROWSER', '🚀 launching profile context', { profile: profilePath });
 
         const context = await chromium.launchPersistentContext(profilePath, {
             headless: false,
@@ -93,9 +129,10 @@ export class BrowserManager {
         });
 
         context.on('close', () => {
-            console.warn('[BrowserManager] PROFILE context closed:', profilePath);
+            logWarn('BROWSER', 'profile context closed', { profile: profilePath });
         });
 
+        logOk('BROWSER', 'profile context ready', { profile: profilePath });
         return context;
     }
 }

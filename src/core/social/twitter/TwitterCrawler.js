@@ -1,3 +1,44 @@
+// =========================
+// Log Utils
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(requestId, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({type: 'LOG', data: {type, msg}});
+}
+
+function log(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(requestId, message, err) {
+    const msg = formatMsg(requestId, `❌ ${message}`, {error: err?.message || err});
+    sendToRenderer('error', msg);
+}
+
+function logOk(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+// Class
+// =========================
+
 export class TwitterCrawler {
 
     constructor(context) {
@@ -5,17 +46,12 @@ export class TwitterCrawler {
     }
 
     normalizeImage(url) {
-
         try {
-
             const u = new URL(url);
-
             if (u.hostname.includes("pbs.twimg.com")) {
                 u.searchParams.set("name", "orig");
             }
-
             return u.toString();
-
         } catch {
             return url;
         }
@@ -29,119 +65,89 @@ export class TwitterCrawler {
 
         const crawlId = id || `TW_${Date.now()}`;
         const startTime = Date.now();
+        const separator = '='.repeat(60);
 
-        console.log(`[${crawlId}] =============================`);
-        console.log(`[${crawlId}] 🐦 START TWITTER GRID CRAWL`);
-        console.log(`[${crawlId}] Last image: ${last_image}`);
+        log(crawlId, separator);
+        log(crawlId, `🐦 START TWITTER GRID CRAWL`, {last_image});
 
         const images = [];
         let stop = false;
         let newLastUrl = null;
 
         try {
-
             await page.waitForTimeout(3000);
-            for (let i = 1; i <= 3; i++) {
-                console.log(`[${crawlId}] 🔄 Scroll warmup ${i}/2`);
 
+            for (let i = 1; i <= 3; i++) {
+                log(crawlId, `🔄 Scroll warmup`, {step: `${i}/3`});
                 await page.evaluate(() => {
                     window.scrollBy(0, window.innerHeight * 1.5);
                 });
-
                 await page.waitForTimeout(1500);
             }
+
             const allItems = await page.$$('[id^="verticalGridItem-"]');
-            console.log(`[${crawlId}] 🔍 Total DOM items found: ${allItems.length}`);
+            log(crawlId, `🔍 Total DOM items found`, {count: allItems.length});
+
             const max = Math.min(allItems.length, 100);
-            const normalizedLast =
-                last_image ? this.normalizeImage(last_image) : null;
+            const normalizedLast = last_image ? this.normalizeImage(last_image) : null;
 
             for (let i = 0; i <= max; i++) {
-
                 if (stop) break;
 
                 const selector = `#verticalGridItem-${i}-profile-grid-0`;
-
-                console.log(`[${crawlId}] 🔍 Checking ${selector}`);
+                log(crawlId, `🔍 Checking item`, {selector});
 
                 const imageData = await page.evaluate((selector) => {
-
                     const node = document.querySelector(selector);
-
                     if (!node) return null;
-
                     const img = node.querySelector('img');
-
                     if (!img || !img.src) return null;
-
-                    return {
-                        url: img.src,
-                        width: img.naturalWidth,
-                        height: img.naturalHeight
-                    };
-
+                    return {url: img.src, width: img.naturalWidth, height: img.naturalHeight};
                 }, selector);
 
                 if (!imageData) {
-
-                    console.log(`[${crawlId}] ⚠ No image found`);
+                    logWarn(crawlId, `No image found`, {selector});
                     continue;
-
                 }
 
-                // ===== SKIP VIDEO =====
                 if (imageData.url.includes("video")) {
-                    console.log(`[${crawlId}] ⏭ Skip video media`);
+                    log(crawlId, `⏭️ Skip video media`);
                     continue;
                 }
+
                 const normalizedUrl = this.normalizeImage(imageData.url);
+                log(crawlId, `📸 Found image`, {url: normalizedUrl});
 
-                console.log(`[${crawlId}] 📸 Found image: ${normalizedUrl}`);
-
-                // ===== CHECK LAST IMAGE =====
                 if (normalizedLast && normalizedUrl === normalizedLast) {
-                    console.log(`[${crawlId}] 🛑 Last image matched → STOP CRAWL`);
+                    log(crawlId, `🛑 Last image matched — STOP CRAWL`);
                     stop = true;
                     break;
-
                 }
-                images.push({
-                    url: normalizedUrl,
-                    width: imageData.width,
-                    height: imageData.height
-                });
 
+                images.push({url: normalizedUrl, width: imageData.width, height: imageData.height});
             }
-            // ===== SET NEW LAST IMAGE =====
-            const firstImage = images.length > 0 ? images[0].url : null;
 
+            const firstImage = images.length > 0 ? images[0].url : null;
             if (firstImage && firstImage !== normalizedLast) {
-                console.log(`[${crawlId}] 🆕 New last image detected: ${firstImage}`);
+                log(crawlId, `🆕 New last image detected`, {url: firstImage});
                 newLastUrl = firstImage;
             }
 
-            console.log(
-                `[${crawlId}] 🎯 Crawl finished. Total images: ${images.length}`
-            );
+            logOk(crawlId, `Crawl finished`, {
+                total: images.length,
+                totalMs: Date.now() - startTime,
+            });
+            log(crawlId, separator);
 
-            console.log(
-                `[${crawlId}] ⏱ Duration: ${Date.now() - startTime}ms`
-            );
+            return {success: true, images, newLastUrl};
 
-            // return { images, newLastUrl };
-            return {success: true, images: images, newLastUrl: newLastUrl};
         } catch (err) {
-
-            console.error(`[${crawlId}] ❌ Crawl error: ${err.message}`);
+            logError(crawlId, `Crawl error`, err);
             throw err;
 
         } finally {
-
-            console.log(
-                `[${crawlId}] ⏱ Finished after ${Date.now() - startTime}ms`
-            );
-
-            console.log(`[${crawlId}] =============================\n`);
+            log(crawlId, `⏱️ Finished`, {totalMs: Date.now() - startTime});
+            log(crawlId, separator);
         }
     }
 }

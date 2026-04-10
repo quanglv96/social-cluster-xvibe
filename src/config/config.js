@@ -6,7 +6,6 @@ const RUNTIME_PATH =
     process.env.RUNTIME_CONFIG_PATH
     || path.resolve('./src/config/config.runtime.json');
 
-console.log("📂 Runtime config path:", RUNTIME_PATH);
 
 
 // =============================

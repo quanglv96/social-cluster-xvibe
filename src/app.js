@@ -38,7 +38,7 @@ async function waitForActiveRequestsToDrain(timeoutMs = RECOVERY_WAIT_TIMEOUT_MS
     const start = Date.now();
     while (activeRequests > 0) {
         if (Date.now() - start >= timeoutMs) {
-            console.warn(`⚠️ Timeout waiting active requests drain. Remaining=${activeRequests}`);
+            logWarn('RECOVERY', `drain timeout, remaining=${activeRequests}`);
             return false;
         }
         await sleep(200);
@@ -47,19 +47,54 @@ async function waitForActiveRequestsToDrain(timeoutMs = RECOVERY_WAIT_TIMEOUT_MS
 }
 
 // =========================
+// Log Utils
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(module, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${module}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function log(module, message, fields = {}) {
+    const msg = formatMsg(module, message, fields);
+    originalLog(msg);
+    sendToUI('log', { type: 'info', msg });
+}
+
+function logWarn(module, message, fields = {}) {
+    const msg = formatMsg(module, `⚠️ ${message}`, fields);
+    sendToUI('log', { type: 'warn', msg });
+}
+
+function logError(module, message, fields = {}) {
+    const msg = formatMsg(module, `❌ ${message}`, fields);
+    sendToUI('log', { type: 'error', msg });
+}
+
+function logOk(module, message, fields = {}) {
+    const msg = formatMsg(module, `✅ ${message}`, fields);
+    originalLog(msg);
+    sendToUI('log', { type: 'ok', msg });
+}
+
+// =========================
 // Recovery
 // =========================
 async function recoverSystem(reason, error = null) {
     if (recoveryPromise) {
-        console.warn(`⚠️ Recovery already in progress (${reason})`);
+        logWarn('RECOVERY', `already in progress, skip`, { reason });
         return recoveryPromise;
     }
 
     recoveryPromise = (async () => {
         isRecovering = true;
         isHealthy = false;
-        console.log(`🔄 Start recovery: ${reason}`);
-        if (error) console.error('Recovery cause:', error);
+        log('RECOVERY', `♻️ started`, { reason });
+        if (error) logError('RECOVERY', 'cause', { error: error.message });
 
         try {
             await waitForActiveRequestsToDrain();
@@ -74,9 +109,9 @@ async function recoverSystem(reason, error = null) {
             }
 
             isHealthy = true;
-            console.log('✅ Recovery completed');
+            logOk('RECOVERY', 'completed');
         } catch (err) {
-            console.error('❌ Recovery failed:', err);
+            logError('RECOVERY', 'failed', { error: err.message });
             isHealthy = false;
         } finally {
             isRecovering = false;
@@ -102,8 +137,8 @@ app.use((req, res, next) => {
     }
 
     if (activeRequests >= MAX_ACTIVE_REQUESTS) {
-        console.warn(`⚠️ Overload detected. activeRequests=${activeRequests}/${MAX_ACTIVE_REQUESTS}`);
-        recoverSystem('overload').catch(err => console.error('Recovery trigger error:', err));
+        logWarn('MIDDLEWARE', `overload detected`, { active: activeRequests, max: MAX_ACTIVE_REQUESTS });
+        recoverSystem('overload').catch(err => logError('MIDDLEWARE', 'recovery trigger failed', { error: err.message }));
         return res.status(503).json({
             success: false,
             error: 'Server overloaded, recovery triggered'
@@ -111,31 +146,22 @@ app.use((req, res, next) => {
     }
 
     activeRequests++;
-    // 🔥 tạo task id
     const taskId = `task_${Date.now()}_${req.body.type}_${req.body.scheduler_id}`;
 
-    // 🔥 push vào queue
     queue.push(taskId);
-
     activeRequests++;
 
-    // 🔥 move sang processing
     processing.set(taskId, {
         url: req.originalUrl,
         start: Date.now()
     });
-
 
     let released = false;
     const release = () => {
         if (!released) {
             released = true;
             activeRequests = Math.max(0, activeRequests - 1);
-
-            // 🔥 remove khỏi processing
             processing.delete(taskId);
-
-            // 🔥 remove khỏi queue
             queue = queue.filter(q => q !== taskId);
         }
     };
@@ -156,7 +182,7 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
-    console.error('💥 Express Error:', err);
+    logError('EXPRESS', `unhandled error`, { error: err.message });
 
     if (!res.headersSent) {
         res.status(500).json({
@@ -175,7 +201,7 @@ app.use((err, req, res, next) => {
         message.includes('protocol error');
 
     if (shouldRecover) {
-        recoverSystem(`express error: ${err.message}`, err).catch(console.error);
+        recoverSystem(`express error: ${err.message}`, err).catch();
     }
 });
 
@@ -193,45 +219,42 @@ async function registerWithRetry(publicUrl) {
         return await AppRegistryService.register(publicUrl);
     } catch (err) {
         attempt++;
-        console.error(`❌ Register failed (attempt ${attempt}):`, err.message);
+        logError('REGISTRY', `register failed`, { attempt, error: err.message });
     }
 }
 
 async function bootstrap() {
     sendToUI('status', 'RUNNING');
-    console.log(`🚀 Starting server at ${PORT}`);
-    console.log("🔥 CURRENT CONFIG:", JSON.stringify(runtimeConfig, null, 2));
+    log('APP', `🚀 starting`, { port: PORT });
+    log('APP', `config=${JSON.stringify(runtimeConfig)}`);
+
     try {
-        // 1. init browser
         if (typeof BrowserManager.init === 'function') {
             await BrowserManager.init();
         }
-        console.log('✨ BrowserManager initialized');
+        logOk('BROWSER', 'initialized');
 
-        // 2. server listen trước
         await new Promise((resolve, reject) => {
             server.listen(PORT, (err) => {
                 if (err) return reject(err);
-                console.log(`✅ Server listening at ${PORT}`);
+                logOk('SERVER', `listening`, { port: PORT });
                 resolve();
             });
         });
 
-        // 3. mở tunnel sau khi port đã listen
         const publicUrl = await TunnelService.start(PORT);
+        log('TUNNEL', `started`, { url: publicUrl });
 
-        // 4. register
         await registerWithRetry(publicUrl);
 
         isHealthy = true;
-        console.log('🎉 Bootstrap complete');
+        logOk('APP', '🎉 bootstrap complete');
 
     } catch (err) {
-        console.error('❌ Bootstrap failed:', err);
+        logError('APP', 'bootstrap failed', { error: err.message });
         process.exit(1);
     }
 }
-
 
 // =========================
 // Process handlers
@@ -240,57 +263,56 @@ async function bootstrap() {
 let isExiting = false;
 
 async function gracefulExit(signal) {
-    console.log("gracefulExit");
-    // ✅ chống gọi nhiều lần (Ctrl+C liên tiếp)
     if (isExiting) return;
     isExiting = true;
 
-    console.log(`\n👋 Received ${signal} — shutting down...`);
+    log('APP', `👋 shutting down`, { signal });
 
     isRecovering = true;
     isHealthy = false;
 
-    // ✅ force exit sau 5s phòng trường hợp cleanup bị treo
     const forceTimer = setTimeout(() => {
-        console.warn('⚠️ Force exit after 5s timeout');
+        logWarn('APP', 'force exit after 5s timeout');
         process.exit(1);
     }, 5000);
-    forceTimer.unref(); // không giữ process sống chỉ vì timer này
+    forceTimer.unref();
 
     try {
-        // ✅ dừng tunnel — quan trọng, nếu thiếu SSH process còn sống
         await TunnelService.stop();
+        log('TUNNEL', 'stopped');
 
-        // dừng browser
         await BrowserManager.closeAll();
-
+        log('BROWSER', 'closed');
     } catch (err) {
-        console.error(`Error on ${signal} cleanup:`, err);
+        logError('APP', `cleanup error on ${signal}`, { error: err.message });
     }
 
-    // đóng HTTP server, không nhận request mới
     server.close(() => {
         clearTimeout(forceTimer);
-        console.log('✅ Server closed — bye!');
+        logOk('SERVER', 'closed — bye!');
         process.exit(0);
     });
-    sendToUI('status', 'STOPPED');
 
+    sendToUI('status', 'STOPPED');
 }
 
-process.on('SIGINT',  () => gracefulExit('SIGINT'));   // Ctrl+C
-process.on('SIGTERM', () => gracefulExit('SIGTERM'));  // docker stop / kill
+process.on('SIGINT',  () => gracefulExit('SIGINT'));
+process.on('SIGTERM', () => gracefulExit('SIGTERM'));
 
 process.on('unhandledRejection', (reason) => {
     const error = safeToError(reason);
-    console.error('💥 Unhandled Rejection:', error);
-    recoverSystem('unhandledRejection', error).catch(console.error);
+    logError('PROCESS', 'unhandledRejection', { error: error.message });
+    recoverSystem('unhandledRejection', error).catch();
 });
 
 process.on('uncaughtException', async (err) => {
-    console.error('💥 Uncaught Exception:', err);
+    logError('PROCESS', 'uncaughtException', { error: err.message });
     await gracefulExit('uncaughtException');
 });
+
+// =========================
+// IPC with Electron
+// =========================
 
 function sendToUI(type, data) {
     if (process.send) {
@@ -298,13 +320,13 @@ function sendToUI(type, data) {
     }
 }
 
-// override console.log để đẩy lên UI
+// override console.log để đẩy lên UI — chỉ plain log, logWarn/logError tự gọi sendToUI
 const originalLog = console.log;
-console.log = (...args) => {
-    const msg = args.join(' ');
-    originalLog(msg);
-    sendToUI('log', msg);
-};
+// console.log = (...args) => {
+//     const msg = args.join(' ');
+//     originalLog(msg);
+//     sendToUI('log', { type: 'info', msg });
+// };
 
 process.on('message', async (msg) => {
     if (!msg) return;
@@ -318,11 +340,10 @@ process.on('message', async (msg) => {
             msg.payload.apiUpdatePage;
 
         updateConfig(msg.payload);
-
-        console.log('⚡ Config updated from UI');
+        logOk('CONFIG', 'updated from UI');
 
         if (needRestart) {
-            console.log('🔁 Critical config changed → restarting...');
+            log('CONFIG', '🔁 critical config changed — restarting');
             await gracefulExit('CONFIG_CHANGE');
             process.exit(0);
         }
@@ -332,7 +353,6 @@ process.on('message', async (msg) => {
         if (msg.cmd === 'stop') {
             await gracefulExit('UI_STOP');
         }
-
         if (msg.cmd === 'restart') {
             await gracefulExit('UI_RESTART');
             process.exit(0);
@@ -340,13 +360,17 @@ process.on('message', async (msg) => {
     }
 });
 
+// =========================
+// Stats & Queue
+// =========================
 
 let errorCount = 0;
 let queue = [];
-let processing = new Map(); // track request đang chạy
+let processing = new Map();
+
 export function reportError() {
     errorCount++;
-    console.log("reportError errorCount" + errorCount);
+    logError('STATS', `error reported`, { total: errorCount });
 }
 
 setInterval(() => {
@@ -362,13 +386,9 @@ setInterval(() => {
 
     sendToUI('queue', queue.map(id => {
         const p = processing.get(id);
-
-        return {
-            id,
-            url: p?.url,
-            duration: p ? (Date.now() - p.start) : 0
-        };
+        return { id, url: p?.url, duration: p ? (Date.now() - p.start) : 0 };
     }));
 
 }, 1000);
+
 bootstrap();

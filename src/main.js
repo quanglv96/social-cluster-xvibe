@@ -1,14 +1,52 @@
 // src/main.js
-import { app, BrowserWindow, ipcMain } from 'electron';
+import {app, BrowserWindow, ipcMain} from 'electron';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { fork } from 'child_process';
+import {fileURLToPath} from 'url';
+import {fork} from 'child_process';
+import {setupGlobalErrorHandler} from "./config/globalErrorHandler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow;
 let serverProcess;
+
+// ======================
+// Log Utils
+// ======================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+setupGlobalErrorHandler();
+
+function formatLog(module, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${module}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function logToRenderer(type, msg) {
+    if (mainWindow?.webContents) {
+        mainWindow.webContents.send('log', {type, msg});
+    }
+}
+
+function log(module, message, fields = {}) {
+    const msg = formatLog(module, message, fields);
+    logToRenderer('info', msg);
+}
+
+function logWarn(module, message, fields = {}) {
+    const msg = formatLog(module, `⚠️ ${message}`, fields);
+    logToRenderer('warn', msg);
+}
+
+function logError(module, message, fields = {}) {
+    const msg = formatLog(module, `❌ ${message}`, fields);
+    console.error(msg);
+    logToRenderer('error', msg);
+}
 
 // ======================
 // WINDOW
@@ -24,13 +62,17 @@ function createWindow() {
     });
 
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
+    log('WINDOW', 'created');
 }
 
 // ======================
 // START SERVER
 // ======================
 function startServer() {
-    if (serverProcess) return;
+    if (serverProcess) {
+        logWarn('SERVER', 'startServer called but process already running');
+        return;
+    }
 
     const userDataPath = app.getPath('userData');
 
@@ -45,44 +87,49 @@ function startServer() {
         }
     );
 
+    log('SERVER', '🚀 started', {pid: serverProcess.pid});
+
     serverProcess.on('message', (msg) => {
         if (!mainWindow) return;
+
+        if (msg.type === 'LOG') {
+            mainWindow.webContents.send('log', msg.data);
+            return;
+        }
 
         mainWindow.webContents.send(msg.type, msg.data);
     });
 
     serverProcess.on('exit', (code) => {
-        console.log("⚠️ Server exited:", code);
-
+        log('SERVER', '🔚 exited', {code});
         serverProcess = null;
 
         // 🔥 chỉ restart nếu KHÔNG phải manual
         if (!isManualStop) {
-            console.log("♻️ Auto restarting server...");
+            log('SERVER', '♻️ auto-restarting', {delayMs: 1000});
             setTimeout(() => startServer(), 1000);
         } else {
-            console.log("⛔ Manual stop — no restart");
-            isManualStop = false; // reset lại
+            log('SERVER', '⛔ manual stop — no restart');
+            isManualStop = false;
         }
     });
 }
+
 let isManualStop = false;
+
 // ======================
 // CONTROL
 // ======================
 ipcMain.on("control", (_, cmd) => {
+    log('CONTROL', `received cmd=${cmd}`);
 
     if (cmd === 'stop') {
         if (serverProcess) {
-            console.log("🛑 Stopping server...");
-
             isManualStop = true;
-
             serverProcess.kill();
-
-            console.log("📴 Kill signal sent to server process");
+            log('CONTROL', '🛑 stop — kill signal sent', {pid: serverProcess?.pid});
         } else {
-            console.log("⚠️ Stop requested but server is not running");
+            logWarn('CONTROL', 'stop requested but server is not running');
         }
     }
 
@@ -94,12 +141,17 @@ ipcMain.on("control", (_, cmd) => {
         startServer();
     }
 });
+
 let isRestarting = false;
 
 function restartServer() {
-    if (isRestarting) return;
+    if (isRestarting) {
+        logWarn('SERVER', 'restartServer called but already restarting');
+        return;
+    }
 
     isRestarting = true;
+    log('SERVER', '♻️ restarting', {hasPrevProcess: !!serverProcess});
 
     if (serverProcess) {
         isManualStop = true; // 🔥 cực kỳ quan trọng
@@ -109,18 +161,21 @@ function restartServer() {
     setTimeout(() => {
         startServer();
         isRestarting = false;
+        log('SERVER', '♻️ restart complete');
     }, 1000);
 }
 
 ipcMain.on("update-config", (_, data) => {
+    log('CONFIG', '📝 update received');
+
     if (serverProcess) {
-        serverProcess.send({
-            type: "CONFIG_UPDATE",
-            payload: data
-        });
+        serverProcess.send({type: "CONFIG_UPDATE", payload: data});
+        log('CONFIG', 'sent CONFIG_UPDATE to server process', {pid: serverProcess.pid});
 
         // 🔥 restart sau khi update
         restartServer();
+    } else {
+        logWarn('CONFIG', 'update received but server is not running');
     }
 });
 
@@ -128,11 +183,13 @@ ipcMain.on("update-config", (_, data) => {
 // APP
 // ======================
 app.whenReady().then(() => {
+    log('APP', '🟢 ready');
     createWindow();
     startServer();
 });
 
 app.on('window-all-closed', () => {
+    log('APP', 'all windows closed — shutting down');
     if (serverProcess) serverProcess.kill();
     if (process.platform !== 'darwin') app.quit();
 });

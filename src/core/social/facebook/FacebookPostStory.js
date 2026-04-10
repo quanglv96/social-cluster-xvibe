@@ -3,30 +3,60 @@ import axios from 'axios';
 import path from 'path';
 import os from 'os';
 
-import {DelayService} from '../../../services/delay.service.js';
-import {config, runtimeConfig} from "../../../config/config.js";
+import { DelayService } from '../../../services/delay.service.js';
+import { config, runtimeConfig } from "../../../config/config.js";
+
+// =========================
+// Log Utils
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(requestId, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
+}
+
+function log(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(requestId, message, err) {
+    const msg = formatMsg(requestId, `❌ ${message}`, { error: err?.message || err });
+    sendToRenderer('error', msg);
+}
+
+function logOk(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+// Class
+// =========================
+
+const TAG = 'FB_POST_STORY';
 
 export class FacebookPostStory {
 
     constructor(context) {
         this.context = context;
-        this.TAG = '[FacebookPostStory]';
         this.delay = new DelayService();
     }
 
-    log(message, data = {}) {
-        console.log(
-            `${this.TAG} ${new Date().toISOString()} - ${message}`,
-            data
-        );
-    }
-
-    async post({
-                   page_admin_url,
-                   list_image,
-                   user_name,
-                   password
-               }, page) {
+    async post({ page_admin_url, list_image, user_name, password }, page) {
 
         if (!page) {
             throw new Error("FacebookPostStory requires event page");
@@ -35,92 +65,63 @@ export class FacebookPostStory {
         let tempFiles = [];
 
         try {
+            log(TAG, `Start story posting`, { totalImages: list_image.length });
 
-            this.log('Start story posting', {
-                totalImages: list_image.length
-            });
-
-            await page.goto('https://www.facebook.com/', {
-                waitUntil: 'domcontentloaded'
-            });
-
+            await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
             await this.delay.navigation('after goto facebook', page);
 
-            // ===== DOWNLOAD IMAGE ONCE =====
+            // ===== DOWNLOAD IMAGES =====
             for (const url of list_image) {
                 const file = await this.downloadImage(url);
                 tempFiles.push(file);
+                log(TAG, `Image downloaded`, { url, filePath: file });
             }
 
-            /**
-             * ==========================
-             * 1️⃣ POST TO PROFILE
-             * ==========================
-             */
-            this.log('Posting story to PROFILE');
+            // ===== 1. POST TO PROFILE =====
+            log(TAG, `Posting story to PROFILE`);
             await this.postStoryFlow(page, tempFiles, 'profile');
 
-            /**
-             * ==========================
-             * 2️⃣ SWITCH TO PAGE
-             * ==========================
-             */
+            // ===== 2. SWITCH TO PAGE =====
             if (page_admin_url) {
-
-                this.log('Switching to PAGE');
-
+                log(TAG, `Switching to PAGE`);
                 await this.switchToPage(page, page_admin_url);
 
-                this.log('Posting story to PAGE');
-
+                log(TAG, `Posting story to PAGE`);
                 await this.postStoryFlow(page, tempFiles, 'page');
+
                 await page.waitForTimeout(5000);
                 await this.switchToProfile(page);
             }
 
-            this.log('Story process completed');
-            return {success: true}
+            logOk(TAG, `Story process completed`);
+            return { success: true };
+
         } finally {
-
             for (const file of tempFiles) {
-                if (fs.existsSync(file)) {
-                    fs.unlinkSync(file);
-                }
+                if (fs.existsSync(file)) fs.unlinkSync(file);
             }
-
-            this.log('Temporary files cleaned');
+            log(TAG, `Temporary files cleaned`, { count: tempFiles.length });
         }
     }
-    async switchToProfile(page) {
 
-        this.log('Switching back to PROFILE');
+    async switchToProfile(page) {
+        log(TAG, `Switching back to PROFILE`);
 
         try {
-            /**
-             * ===== STEP 1: CLICK AVATAR =====
-             */
             const profileBtn = await page.waitForSelector(
                 '[aria-label="Trang cá nhân của bạn"][role="button"]',
                 { timeout: 10000 }
             );
-
             await profileBtn.click();
-
-            this.log('Clicked profile avatar');
-
+            log(TAG, `Clicked profile avatar`);
             await this.delay.action('after click avatar', page);
 
-            /**
-             * ===== STEP 2: CLICK "CHUYỂN SANG PROFILE" =====
-             * Dựa vào aria-label dynamic
-             */
             const switchProfileBtn = await page.waitForSelector(
                 '[aria-label^="Chuyển sang"]',
                 { timeout: 10000 }
             );
-
             const label = await switchProfileBtn.getAttribute('aria-label');
-            this.log('Found switch profile button', { label });
+            log(TAG, `Found switch profile button`, { label });
 
             await Promise.all([
                 page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {}),
@@ -128,25 +129,16 @@ export class FacebookPostStory {
             ]);
 
             await this.delay.navigation('after switch to profile', page);
-
-            this.log('Switched back to PROFILE', {
-                currentUrl: page.url()
-            });
+            logOk(TAG, `Switched back to PROFILE`, { currentUrl: page.url() });
 
         } catch (err) {
-            this.log('Switch to PROFILE failed', {
-                error: err.message
-            });
+            logError(TAG, `Switch to PROFILE failed`, err);
         }
     }
-    /**
-     * ===== COMMON STORY FLOW =====
-     */
+
     async postStoryFlow(page, filePaths, mode) {
-
         for (let i = 0; i < filePaths.length; i++) {
-
-            this.log('Posting story image', {index: i + 1});
+            log(TAG, `Posting story image`, { index: i + 1, total: filePaths.length, mode });
 
             if (mode === 'page') {
                 await this.openCreateStoryPage(page);
@@ -155,83 +147,60 @@ export class FacebookPostStory {
             }
 
             await this.uploadStoryByDrop(page, filePaths[i]);
+
             if (mode === 'page') {
                 await this.addLinkButton(page, `${runtimeConfig.rootUrl}`);
             }
+
             await this.shareStory(page);
+            logOk(TAG, `Story image posted`, { index: i + 1, mode });
 
             await this.delay.betweenGroup('cooldown between stories');
         }
     }
 
     async addLinkButton(page, url) {
+        log(TAG, `Adding link button`, { url });
 
-        // 1️⃣ Click "Thêm nút"
-        const addBtn = page.locator(
-            'span:has-text("Thêm nút")'
-        ).first();
-
-        await addBtn.waitFor({timeout: 15000});
-        await addBtn.click({force: true});
-
+        const addBtn = page.locator('span:has-text("Thêm nút")').first();
+        await addBtn.waitFor({ timeout: 15000 });
+        await addBtn.click({ force: true });
         await page.waitForTimeout(2000);
 
-
-        // 2️⃣ Chọn radio "web link"
-        const webLinkRadio = page.locator(
-            'input[type="radio"][value="web link"]'
-        );
-
-        await webLinkRadio.waitFor({timeout: 10000});
-        await webLinkRadio.check({force: true});
-
+        const webLinkRadio = page.locator('input[type="radio"][value="web link"]');
+        await webLinkRadio.waitFor({ timeout: 10000 });
+        await webLinkRadio.check({ force: true });
         await page.waitForTimeout(1000);
 
-
-        // 3️⃣ Nhập link
-        const inputLink = page.locator(
-            'span:has-text("Nhập liên kết")'
-        ).locator('xpath=ancestor::div[1]//input');
-
-        await inputLink.fill(url, {force: true});
-
+        const inputLink = page.locator('span:has-text("Nhập liên kết")').locator('xpath=ancestor::div[1]//input');
+        await inputLink.fill(url, { force: true });
         await page.waitForTimeout(2000);
+
+        logOk(TAG, `Link button added`, { url });
     }
 
     async switchToPage(page, pageAdminUrl) {
+        log(TAG, `Switching to PAGE`, { pageAdminUrl });
 
-        this.log('Switching profile', {pageAdminUrl});
-
-        await page.goto(pageAdminUrl, {
-            waitUntil: 'domcontentloaded'
-        });
-
+        await page.goto(pageAdminUrl, { waitUntil: 'domcontentloaded' });
         await this.delay.navigation('after goto page admin', page);
 
-        const switchBtn = await page.$(
-            'span:has-text("Chuyển ngay"), span:has-text("Switch Now")'
-        );
+        const switchBtn = await page.$('span:has-text("Chuyển ngay"), span:has-text("Switch Now")');
 
         if (!switchBtn) {
-            this.log('Switch button not found, continue current profile');
+            logWarn(TAG, `Switch button not found, continue current profile`);
             return;
         }
 
         await Promise.all([
-            page.waitForNavigation({waitUntil: 'domcontentloaded'}).catch(() => {
-            }),
+            page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {}),
             switchBtn.click()
         ]);
 
         await this.delay.navigation('after switch profile', page);
+        logOk(TAG, `Profile switched`, { currentUrl: page.url() });
 
-        this.log('Profile switched', {
-            currentUrl: page.url()
-        });
-        await page.goto('https://www.facebook.com/', {
-            waitUntil: 'domcontentloaded'
-        });
-
+        await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
         await this.delay.navigation('after goto facebook', page);
     }
 
@@ -240,93 +209,78 @@ export class FacebookPostStory {
             'a[href="/stories/create/"], a[aria-label="Tạo tin"], a[aria-label="Create story"]'
         ).first();
 
-        await createStoryLink.waitFor({state: 'visible', timeout: 15000});
+        await createStoryLink.waitFor({ state: 'visible', timeout: 15000 });
         await createStoryLink.click();
 
         await this.delay.action('after click create story', page);
         await this.delay.action('after click image story option', page);
+
+        log(TAG, `Story profile editor opened`);
     }
 
     async openCreateStoryPage(page) {
-
         const createBtn = page.locator(
             'a[href="/stories/create/"], a[aria-label="Tạo tin"], a[aria-label="Create story"]'
         ).first();
 
-        await createBtn.waitFor({state: 'visible', timeout: 15000});
+        await createBtn.waitFor({ state: 'visible', timeout: 15000 });
         await Promise.all([
-            page.waitForNavigation({waitUntil: 'domcontentloaded'}),
+            page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
             createBtn.click()
         ]);
 
         await page.waitForLoadState('networkidle');
-
         await page.waitForTimeout(4000);
+
+        log(TAG, `Story page editor opened`);
     }
 
     async uploadStoryByDrop(page, filePath) {
+        log(TAG, `Uploading story via drop`, { filePath });
 
         const fileName = path.basename(filePath);
-        const fileBase64 = fs.readFileSync(filePath, {encoding: 'base64'});
+        const fileBase64 = fs.readFileSync(filePath, { encoding: 'base64' });
 
         const dataTransfer = await page.evaluateHandle(
-            async ({fileBase64, fileName}) => {
-
+            async ({ fileBase64, fileName }) => {
                 const byteCharacters = atob(fileBase64);
                 const byteNumbers = new Array(byteCharacters.length);
-
                 for (let i = 0; i < byteCharacters.length; i++) {
                     byteNumbers[i] = byteCharacters.charCodeAt(i);
                 }
-
                 const byteArray = new Uint8Array(byteNumbers);
-
-                const blob = new Blob([byteArray], {type: 'image/jpeg'});
-                const file = new File([blob], fileName, {type: 'image/jpeg'});
-
+                const blob = new Blob([byteArray], { type: 'image/jpeg' });
+                const file = new File([blob], fileName, { type: 'image/jpeg' });
                 const dt = new DataTransfer();
                 dt.items.add(file);
-
                 return dt;
-
             },
-            {fileBase64, fileName}
+            { fileBase64, fileName }
         );
 
-        // drop vào body
-        await page.dispatchEvent('body', 'dragenter', {dataTransfer});
-        await page.dispatchEvent('body', 'dragover', {dataTransfer});
-        await page.dispatchEvent('body', 'drop', {dataTransfer});
-
+        await page.dispatchEvent('body', 'dragenter', { dataTransfer });
+        await page.dispatchEvent('body', 'dragover', { dataTransfer });
+        await page.dispatchEvent('body', 'drop', { dataTransfer });
         await page.waitForTimeout(5000);
+
+        logOk(TAG, `Story image dropped`);
     }
 
     async shareStory(page) {
+        log(TAG, `Sharing story...`);
 
-        const shareBtn = page.locator(
-            'span:has-text("Chia sẻ lên tin")'
-        ).locator('xpath=ancestor::div[1]');
-
-        await shareBtn.waitFor({timeout: 20000});
-
-        await shareBtn.click({force: true});
-
+        const shareBtn = page.locator('span:has-text("Chia sẻ lên tin")').locator('xpath=ancestor::div[1]');
+        await shareBtn.waitFor({ timeout: 20000 });
+        await shareBtn.click({ force: true });
         await page.waitForTimeout(5000);
+
+        logOk(TAG, `Story shared`);
     }
 
     async downloadImage(url) {
-
-        const response = await axios.get(url, {
-            responseType: 'arraybuffer'
-        });
-
-        const filePath = path.join(
-            os.tmpdir(),
-            `story_${Date.now()}_${Math.random()}.jpg`
-        );
-
+        const response = await axios.get(url, { responseType: 'arraybuffer' });
+        const filePath = path.join(os.tmpdir(), `story_${Date.now()}_${Math.random()}.jpg`);
         await fs.promises.writeFile(filePath, response.data);
-
         return filePath;
     }
 }

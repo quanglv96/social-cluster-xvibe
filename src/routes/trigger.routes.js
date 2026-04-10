@@ -5,11 +5,12 @@ import {PostGroupTrigger} from '../triggers/PostGroupTrigger.js';
 import {PostTweetTrigger} from '../triggers/PostTweetTrigger.js';
 import {ContextFactory} from '../core/browser/ContextFactory.js';
 import {PostStoryTrigger} from "../triggers/PostStoryTrigger.js";
-import { runtimeConfig} from "../config/config.js";
+import {runtimeConfig} from "../config/config.js";
 import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
 import {TwCrawlTrigger} from "../triggers/TwCrawlTrigger.js";
 import {FacebookContextPool} from "../core/auth/FacebookContextPool.js";
-import { reportError } from '../app.js';
+import {reportError} from '../app.js';
+
 const router = express.Router();
 
 let ACTIVE_REQUESTS = 0;
@@ -48,43 +49,47 @@ function pageDebugId(page, fallback = 'null') {
     return page.__debugId;
 }
 
-function trace(requestId, startTime, step, extra = '') {
-    const prefix = `[${nowIso()}] [${requestId}] [${elapsed(startTime)}ms] ${step}`;
-    if (extra) {
-        console.log(`${prefix} | ${extra}`);
-    } else {
-        console.log(prefix);
-    }
+// =========================
+// Log Utils
+// =========================
+
+function formatMsg(requestId, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
 }
 
-function traceError(requestId, startTime, step, err) {
-    console.error(
-        `[${nowIso()}] [${requestId}] [${elapsed(startTime)}ms] ${step} | ERROR=${err?.message || err}`
-    );
-    if (err?.stack) {
-        console.error(`[${nowIso()}] [${requestId}] STACK:\n${err.stack}`);
-    }
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
 }
 
-async function measure(requestId, startTime, label, fn) {
-    const stepStart = Date.now();
-    trace(requestId, startTime, `▶ START ${label}`);
+function log(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(requestId, message, err) {
+    const msg = formatMsg(requestId, `❌ ${message}`, { error: err?.message || err });
+    sendToRenderer('error', msg);
+}
+
+function logOk(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+async function measure(requestId, label, fn) {
+    const t = Date.now();
     try {
         const result = await fn();
-        trace(
-            requestId,
-            startTime,
-            `✅ END ${label}`,
-            `stepDuration=${Date.now() - stepStart}ms`
-        );
+        log(requestId, `  ✔ ${label}`, {ms: Date.now() - t});
         return result;
     } catch (err) {
-        traceError(
-            requestId,
-            startTime,
-            `❌ FAIL ${label} stepDuration=${Date.now() - stepStart}ms`,
-            err
-        );
+        logError(requestId, `${label} failed`, err);
         throw err;
     }
 }
@@ -95,7 +100,7 @@ async function measure(requestId, startTime, label, fn) {
 
 async function sendCallback(callbackUrl, schedulerId, requestId, actionName, dtoType, success, data) {
     if (!callbackUrl) {
-        console.warn(`[${nowIso()}] [CALLBACK] ⚠️ no callback_url, skip. requestId=${requestId}`);
+        logWarn(requestId, 'no callback_url, skip');
         return;
     }
     try {
@@ -107,7 +112,7 @@ async function sendCallback(callbackUrl, schedulerId, requestId, actionName, dto
             ...data
         };
 
-        trace(requestId, 0, '[CALLBACK] sending', `url=${callbackUrl} type=${dtoType} success=${success} request_id = ${requestId}`);
+        log(requestId, `📡 CALLBACK SENDING`, {url: callbackUrl, type: dtoType, success});
 
         const res = await fetch(callbackUrl, {
             method: 'POST',
@@ -115,9 +120,9 @@ async function sendCallback(callbackUrl, schedulerId, requestId, actionName, dto
             body: JSON.stringify(body)
         });
 
-        trace(requestId, 0, '[CALLBACK] done', `status=${res.status}`);
+        log(requestId, `📡 CALLBACK SENT`, {status: res.status});
     } catch (e) {
-        console.error(`[${nowIso()}] [CALLBACK] ❌ failed: ${e.message} requestId=${requestId}`);
+        logError(requestId, 'CALLBACK FAILED', e);
     }
 }
 
@@ -131,7 +136,7 @@ let processing = false;
 function enqueue(task) {
     queue.push(task);
     processQueue().catch((err) => {
-        console.error(`[${nowIso()}] [QUEUE] processQueue failed: ${err?.message || err}`);
+        logError('QUEUE', 'processQueue failed', err);
     });
 }
 
@@ -144,7 +149,7 @@ async function processQueue() {
             try {
                 await task();
             } catch (err) {
-                console.error(`[${nowIso()}] [QUEUE] task failed: ${err?.message || err}`);
+                logError('QUEUE', 'task failed', err);
             } finally {
                 QUEUE_SIZE--;
             }
@@ -171,11 +176,17 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
 
     QUEUE_SIZE++;
 
-    console.log(`\n================================================================================`);
-    trace(requestId, startTime, '📥 REQUEST ENQUEUED',
-        `action=${actionName} type=${dtoType} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS} pid=${process.pid}`
-    );
-    trace(requestTrace, startTime, 'REQ BODY', safeJson(dto));
+    const separator = '\n' + '='.repeat(80);
+    sendToRenderer('info', separator);
+
+    log(requestId, `📥 ENQUEUED`, {
+        action: actionName,
+        type: dtoType,
+        queue: QUEUE_SIZE,
+        active: ACTIVE_REQUESTS,
+        pid: process.pid,
+    });
+    log(requestTrace, `REQ BODY`, {body: safeJson(dto)});
 
     // ✅ Trả về ngay — Java không bị timeout dù crawl lâu bao nhiêu
     res.status(202).json({
@@ -187,13 +198,16 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
         queue_position: QUEUE_SIZE
     });
 
-    trace(requestTrace, startTime, '↩️ 202 ACCEPTED SENT', `callbackUrl=${callbackUrl || 'none'}`);
+    log(requestTrace, `↩️ 202 ACCEPTED`, {callbackUrl: callbackUrl || 'none'});
 
     // Xử lý ngầm sau khi đã trả response
     enqueue(async () => {
-        trace(requestTrace, startTime, '🎯 REQUEST DEQUEUED',
-            `action=${actionName} queueSize=${QUEUE_SIZE} activeRequests=${ACTIVE_REQUESTS}`
-        );
+        log(requestId, `🎯 DEQUEUED`, {
+            action: actionName,
+            queue: QUEUE_SIZE,
+            active: ACTIVE_REQUESTS,
+        });
+
         // res giả — thay HTTP response bằng callback
         const fakeRes = {
             headersSent: false,
@@ -201,18 +215,21 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
             json(data) {
                 this.headersSent = true;
                 sendCallback(callbackUrl, schedulerId, requestId, actionName, dtoType, true, data)
-                    .catch(() => {
-                    });
+                    .catch(() => {});
             }
         };
         try {
             await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime);
         } finally {
             reportError(); // 🔥 điểm quan trọng
-            trace(requestTrace, startTime, '📤 REQUEST REMOVED FROM QUEUE',
-                `action=${actionName} queueSize=${Math.max(QUEUE_SIZE - 1, 0)} activeRequests=${ACTIVE_REQUESTS}`
-            );
-            console.log(`================================================================================\n`);
+            log(requestId, `🏁 DONE`, {
+                action: actionName,
+                queue: Math.max(QUEUE_SIZE - 1, 0),
+                active: ACTIVE_REQUESTS,
+                totalMs: elapsed(startTime),
+            });
+            const closingSeparator = '='.repeat(80);
+            sendToRenderer('info', closingSeparator);
         }
     });
 }
@@ -232,44 +249,28 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
     const requestTrace = dto.type + "_" + dto.scheduler_id;
 
     ACTIVE_REQUESTS++;
-    trace(requestTrace, startTime, `🚀 REQUEST START`,
-        `action=${actionName} activeRequests=${ACTIVE_REQUESTS} pid=${process.pid}`
-    );
+    log(requestTrace, `🚀 REQUEST START`, {action: actionName, active: ACTIVE_REQUESTS, pid: process.pid});
 
     const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB'].includes(dto.type);
 
     try {
-        trace(requestTrace, startTime, `CHECK PRE STATE`,
-            `hasEvent=${SessionManager.hasEvent} navigatorExists=${!!SessionManager.navigator}`
-        );
-
-        session = await measure(requestTrace, startTime, 'SessionManager.getSession()', async () => {
+        session = await measure(requestTrace, 'getSession', async () => {
             return await SessionManager.getSession();
         });
         rootPage = session?.rootPage;
 
-        trace(requestTrace, startTime, `SESSION READY`,
-            `rootPage=${pageDebugId(rootPage, 'ROOT_NULL')}`
-        );
-
-        await measure(requestTrace, startTime, 'Set SessionManager.hasEvent = true', async () => {
+        await measure(requestTrace, 'set hasEvent=true', async () => {
             SessionManager.hasEvent = true;
         });
 
-        trace(requestTrace, startTime, `SESSION FLAG UPDATED`,
-            `hasEvent=${SessionManager.hasEvent}`
-        );
-
         if (SessionManager.navigator) {
-            await measure(requestTrace, startTime, 'SessionManager.navigator.stop()', async () => {
+            await measure(requestTrace, 'navigator.stop', async () => {
                 return await SessionManager.navigator.stop();
             });
-        } else {
-            trace(requestTrace, startTime, `SKIP navigator.stop()`, `navigator is null`);
         }
 
         if (TriggerClass.useEventPage) {
-            page = await measure(requestTrace, startTime, 'SessionManager.createEventPage()', async () => {
+            page = await measure(requestTrace, 'createEventPage', async () => {
                 if (isFacebook) {
                     page = await FacebookContextPool.createEventPage(dto);
                 } else {
@@ -277,37 +278,25 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
                 }
                 return page;
             });
-
-            trace(requestTrace, startTime, `EVENT PAGE CREATED`,
-                `eventPage=${pageDebugId(page)}`
-            );
-        } else {
-            trace(requestTrace, startTime, `SKIP createEventPage()`, `useEventPage=false`);
         }
 
-        resultFactory = await measure(requestTrace, startTime, 'ContextFactory.create(dto)', async () => {
+        resultFactory = await measure(requestTrace, 'ContextFactory.create', async () => {
             return await ContextFactory.create(dto);
         });
 
-        trace(requestTrace, startTime, `CONTEXT FACTORY READY`,
-            `social=${resultFactory?.social?.constructor?.name || 'unknown'}`
-        );
-
-        trigger = await measure(requestTrace, startTime, `new ${TriggerClass.name}(social)`, async () => {
+        trigger = await measure(requestTrace, `new ${TriggerClass.name}`, async () => {
             return new TriggerClass(resultFactory.social);
         });
 
-        trace(requestTrace, startTime, `TRIGGER READY`,
-            `trigger=${TriggerClass.name} executePage=${pageDebugId(page || rootPage, 'NO_PAGE')}`
-        );
-
-        const result = await measure(requestTrace, startTime, `${TriggerClass.name}.execute(dto, page)`, async () => {
+        const result = await measure(requestTrace, `${TriggerClass.name}.execute`, async () => {
             return await trigger.execute(dto, page);
         });
 
-        trace(requestTrace, startTime, `TRIGGER EXECUTED SUCCESS`,
-            `pageUsed=${pageDebugId(page || rootPage, 'NO_PAGE')}`
-        );
+        logOk(requestTrace, `REQUEST SUCCESS`, {
+            action: actionName,
+            images: result?.images?.length ?? 0,
+            totalMs: elapsed(startTime),
+        });
 
         res.json({
             success: true,
@@ -316,33 +305,24 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             value: result?.images?.length ?? 0
         });
 
-        trace(requestTrace, startTime, `HTTP RESPONSE SENT`, `status=200`);
-
     } catch (err) {
-        traceError(requestTrace, startTime, 'HANDLE REQUEST FAILED', err);
+        logError(requestTrace, `REQUEST FAILED | action=${actionName} totalMs=${elapsed(startTime)}`, err);
 
         try {
             let screenshotBase64 = null;
 
             if (page) {
-                const closePageId = pageDebugId(page);
-
-                await measure(requestTrace, startTime, 'Handle event page (catch)', async () => {
+                await measure(requestTrace, 'closeEventPage[catch]', async () => {
                     if (!isFacebook) {
                         await SessionManager.closeEventPage(page);
                     } else {
                         await SessionManager.restoreRootOnly();
                     }
                 });
-
-                trace(requestTrace, startTime, `EVENT PAGE HANDLED IN CATCH`,
-                    `eventPage=${closePageId} isFacebook=${isFacebook}`
-                );
-
                 page = null;
             }
 
-            await measure(requestTrace, startTime, 'sendErrorLog(payload)', async () => {
+            await measure(requestTrace, 'sendErrorLog', async () => {
                 return await sendErrorLog({
                     type: dto?.type,
                     error_message: err.message,
@@ -353,7 +333,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             });
 
         } catch (sendErr) {
-            traceError(requestTrace, startTime, 'sendErrorLog FAILED', sendErr);
+            logError(requestTrace, 'sendErrorLog failed', sendErr);
         }
 
         if (!res.headersSent) {
@@ -362,59 +342,42 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
                 error: err.message,
                 requestId
             });
-
-            trace(requestTrace, startTime, `HTTP RESPONSE SENT`, `status=500`);
         }
 
     } finally {
-        trace(requestTrace, startTime, `ENTER FINALLY`,
-            `page=${pageDebugId(page, 'NULL')} hasEvent(before)=${SessionManager.hasEvent}`
-        );
-
         if (page) {
-            const closePageId = pageDebugId(page);
-
-            await measure(requestTrace, startTime, 'Handle event page (finally)', async () => {
+            await measure(requestTrace, 'closeEventPage[finally]', async () => {
                 if (!isFacebook) {
                     await SessionManager.closeEventPage(page);
                 } else {
                     await SessionManager.restoreRootOnly();
                 }
             });
-
-            trace(requestTrace, startTime, `EVENT PAGE HANDLED IN FINALLY`,
-                `eventPage=${closePageId} isFacebook=${isFacebook}`
-            );
-        } else {
-            trace(requestTrace, startTime, `SKIP closeEventPage in finally`, `page is null`);
         }
 
         try {
-            await measure(requestTrace, startTime, 'Set SessionManager.hasEvent = false', async () => {
+            await measure(requestTrace, 'set hasEvent=false', async () => {
                 SessionManager.hasEvent = false;
             });
-
-            trace(requestTrace, startTime, `SESSION FLAG RESET`,
-                `hasEvent=${SessionManager.hasEvent}`
-            );
         } catch (err) {
-            traceError(requestTrace, startTime, 'Set hasEvent=false FAILED', err);
+            logError(requestTrace, 'set hasEvent=false failed', err);
         }
 
         if (SessionManager.navigator) {
             const nextActive = ACTIVE_REQUESTS - 1;
             if (nextActive === 0 && queue.length === 0) {
                 setTimeout(() => {
-                    SessionManager.navigator.start().catch(() => {
-                    });
+                    SessionManager.navigator.start().catch(() => {});
                 }, 0);
             }
         }
 
         ACTIVE_REQUESTS--;
-        trace(requestTrace, startTime, `🏁 REQUEST END`,
-            `action=${actionName} total=${elapsed(startTime)}ms activeRequests=${ACTIVE_REQUESTS}`
-        );
+        log(requestTrace, `🔚 REQUEST END`, {
+            action: actionName,
+            active: ACTIVE_REQUESTS,
+            totalMs: elapsed(startTime),
+        });
     }
 }
 
@@ -424,15 +387,14 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
 async function sendErrorLog(payload) {
     try {
-        console.error(`[${nowIso()}] [SEND_ERROR_LOG] payload=${safeJson(payload)}`);
-        console.error(`[${nowIso()}] [SEND_ERROR_LOG] api=${runtimeConfig.apiLogError}`);
+        logError('SEND_ERROR_LOG', `sending`, { payload: safeJson(payload), api: runtimeConfig.api.apiLogError });
         await fetch(`${runtimeConfig.api.apiLogError}`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         });
     } catch (e) {
-        console.error(`[${nowIso()}] [SEND_ERROR_LOG] ❌ Cannot send log to API: ${e.message}`);
+        logError('SEND_ERROR_LOG', 'cannot send log to API', e);
         throw e;
     }
 }
@@ -469,12 +431,12 @@ router.post('/bot/sleep', async (req, res) => {
     const requestId = buildRequestId('BOT_SLEEP');
     const startTime = Date.now();
     try {
-        trace(requestId, startTime, 'BOT SLEEP START');
+        log(requestId, 'BOT SLEEP START');
         await SessionManager.sleep();
-        trace(requestId, startTime, 'BOT SLEEP DONE');
+        logOk(requestId, 'BOT SLEEP DONE', {ms: elapsed(startTime)});
         res.json({status: 'sleeping', requestId});
     } catch (err) {
-        traceError(requestId, startTime, 'BOT SLEEP FAILED', err);
+        logError(requestId, 'BOT SLEEP FAILED', err);
         res.status(500).json({status: 'error', error: err.message, requestId});
     }
 });
@@ -483,12 +445,12 @@ router.post('/bot/wakeup', async (req, res) => {
     const requestId = buildRequestId('BOT_WAKEUP');
     const startTime = Date.now();
     try {
-        trace(requestId, startTime, 'BOT WAKEUP START');
+        log(requestId, 'BOT WAKEUP START');
         await SessionManager.wakeup();
-        trace(requestId, startTime, 'BOT WAKEUP DONE');
+        logOk(requestId, 'BOT WAKEUP DONE', {ms: elapsed(startTime)});
         res.json({status: 'running', requestId});
     } catch (err) {
-        traceError(requestId, startTime, 'BOT WAKEUP FAILED', err);
+        logError(requestId, 'BOT WAKEUP FAILED', err);
         res.status(500).json({status: 'error', error: err.message, requestId});
     }
 });
@@ -497,12 +459,12 @@ router.post('/bot/force-logout', async (req, res) => {
     const requestId = buildRequestId('FORCE_LOGOUT');
     const startTime = Date.now();
     try {
-        trace(requestId, startTime, 'FORCE LOGOUT START');
+        log(requestId, 'FORCE LOGOUT START');
         await SessionManager.forceLogout('manual_trigger');
-        trace(requestId, startTime, 'FORCE LOGOUT DONE');
+        logOk(requestId, 'FORCE LOGOUT DONE', {ms: elapsed(startTime)});
         res.json({success: true, requestId});
     } catch (err) {
-        traceError(requestId, startTime, 'FORCE LOGOUT FAILED', err);
+        logError(requestId, 'FORCE LOGOUT FAILED', err);
         res.status(500).json({success: false, error: err.message, requestId});
     }
 });
