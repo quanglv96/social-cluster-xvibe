@@ -231,7 +231,7 @@
 
         .stat-value.accent { color: var(--accent); }
         .stat-value.green  { color: var(--green); }
-        .stat-value.red  { color: var(--red); }
+        .stat-value.red    { color: var(--red); }
 
         /* ── QUEUE ── */
         .queue-item {
@@ -265,28 +265,45 @@
             border-left: 1px solid var(--border-hi);
         }
 
+        /* log-scroll là container scroll thực sự */
+        #log-scroll {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        #log-scroll::-webkit-scrollbar { width: 4px; }
+        #log-scroll::-webkit-scrollbar-track { background: transparent; }
+        #log-scroll::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
         #log {
             font-size: 11px;
             line-height: 1.7;
             padding: 10px 14px;
+            display: flex;
+            flex-direction: column; /* asc: entry mới append xuống dưới */
         }
 
         .log-line {
             display: flex;
             gap: 10px;
-            margin-bottom: 2px;
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(26,45,74,0.4);
         }
+
+        .log-line:last-child { border-bottom: none; }
 
         .log-ts {
             color: var(--text-dim);
             flex-shrink: 0;
+            user-select: none;
         }
 
-        .log-msg { color: var(--text-sec); }
-        .log-info .log-msg  { color: var(--accent); }
-        .log-warn .log-msg  { color: var(--amber); }
-        .log-error .log-msg { color: var(--red); }
-        .log-ok .log-msg    { color: var(--green); }
+        .log-msg { color: var(--text-sec); word-break: break-all; }
+        .log-info  .log-msg { color: var(--accent); }
+        .log-warn  .log-msg { color: var(--amber);  }
+        .log-error .log-msg { color: var(--red);    }
+        .log-ok    .log-msg { color: var(--green);  }
 
         .log-icon {
             flex-shrink: 0;
@@ -294,6 +311,7 @@
             text-align: center;
             font-size: 10px;
             opacity: .85;
+            user-select: none;
         }
 
         .log-info  .log-icon { color: var(--accent); }
@@ -364,7 +382,7 @@
     <!-- LOG -->
     <div class="panel log-panel">
         <div class="panel-header">Live Log</div>
-        <div class="panel-body">
+        <div id="log-scroll">
             <div id="log"></div>
         </div>
     </div>
@@ -372,5 +390,25 @@
 </div>
 
 <script src="./renderer.js"></script>
+<script>
+    (function () {
+        var logEl  = document.getElementById('log');
+        var scroll = document.getElementById('log-scroll');
+
+        function pinBottom() {
+            scroll.scrollTop = scroll.scrollHeight;
+        }
+
+        // scroll ke cuoi ngay sau khi renderer.js load xong
+        requestAnimationFrame(pinBottom);
+
+        // theo doi moi node moi duoc append vao #log
+        new MutationObserver(pinBottom).observe(logEl, {
+            childList:     true,
+            subtree:       true,
+            characterData: true
+        });
+    })();
+</script>
 </body>
 </html>
