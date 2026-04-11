@@ -211,7 +211,7 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
         // res giả — thay HTTP response bằng callback
         const fakeRes = {
             headersSent: false,
-
+            _statusCode: 200,
             json(data) {
                 this.headersSent = true;
                 sendCallback(callbackUrl, schedulerId, requestId, actionName, dtoType, true, data)
@@ -387,15 +387,22 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
 async function sendErrorLog(payload) {
     try {
-        logError('SEND_ERROR_LOG', `sending`, { payload: safeJson(payload), api: runtimeConfig.api.apiLogError });
-        await fetch(`${runtimeConfig.api.apiLogError}`, {
+        logError('SEND_ERROR_LOG', `sending`, {
+            payload: safeJson(payload),
+            api: runtimeConfig.api.apiLogError
+        });
+        const res = await fetch(`${runtimeConfig.api.apiLogError}`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         });
+
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`); // ← throw Error, không phải object
+        }
     } catch (e) {
         logError('SEND_ERROR_LOG', 'cannot send log to API', e);
-        throw e;
+        throw e; // ← re-throw để caller biết
     }
 }
 

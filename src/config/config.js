@@ -1,6 +1,25 @@
 import fs from 'fs';
 import path from 'path';
-import dotenv from 'dotenv'; dotenv.config();
+import dotenv from 'dotenv';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const envPath = process.env.PORTABLE_EXECUTABLE_DIR
+    ? path.join(process.env.PORTABLE_EXECUTABLE_DIR, '.env')
+    : path.resolve('.env');
+dotenv.config({ path: envPath });
+
+// =============================
+// Đọc built-in config từ package.json
+// =============================
+let builtinConfig = {};
+try {
+    const pkg = require('../../package.json'); // hoặc path phù hợp
+    builtinConfig = pkg.config || {};
+} catch (e) {
+    // ignore
+}
+
 // runtime path
 const RUNTIME_PATH =
     process.env.RUNTIME_CONFIG_PATH
@@ -36,22 +55,21 @@ const toNumber = (val, def) => {
 // =============================
 // Base (🔥 Ưu tiên persisted)
 // =============================
-const ROOT_URL = toStr(process.env.ROOT_URL);
-const HOST = persisted.host || toStr(process.env.HOST);
+const ROOT_URL = persisted.rootUrl || toStr(process.env.ROOT_URL) || builtinConfig.rootUrl || '';
+
+const HOST = persisted.host || toStr(process.env.HOST) || builtinConfig.host || '';
 
 // =============================
 // Config (immutable base)
 // =============================
 export const config = {
-    headless: toBool(process.env.HEADLESS, true),
-
+    headless: toBool(process.env.HEADLESS, builtinConfig.headless ?? true),
     rootUrl: ROOT_URL,
     host: HOST,
     api: buildApi(HOST),
-    maxImages: toNumber(process.env.MAX_IMAGES, 100),
-    defaultWait: toNumber(process.env.DEFAULT_WAIT, 3000),
-
-    facebookProfileDir: './fb_profiles',
+    maxImages: toNumber(process.env.MAX_IMAGES, builtinConfig.maxImages ?? 100),
+    defaultWait: toNumber(process.env.DEFAULT_WAIT, builtinConfig.defaultWait ?? 3000),
+    facebookProfileDir: process.env.FB_PROFILES_DIR || './fb_profiles', // ← thêm fallback
 };
 
 // =============================
@@ -80,7 +98,10 @@ function buildApi(host) {
 function persistConfig(data) {
     try {
         fs.mkdirSync(path.dirname(RUNTIME_PATH), { recursive: true });
-        fs.writeFileSync(RUNTIME_PATH, JSON.stringify(data, null, 2));
+        fs.writeFileSync(RUNTIME_PATH, JSON.stringify({
+            rootUrl: runtimeConfig.rootUrl,  // ← luôn giữ lại
+            ...data                           // ← host từ caller ghi đè nếu có
+        }, null, 2));
         console.log("💾 Config persisted");
     } catch (e) {
         console.error("❌ Failed to persist config:", e);

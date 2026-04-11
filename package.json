@@ -8,15 +8,26 @@
   },
   "build": {
     "appId": "com.mycompany.fbcrawler",
+    "productName": "Social Cluster X-Vibe",
+    "artifactName": "${productName}-v${version}.${ext}",
     "files": [
       "src/**/*",
       "!src/config/config.runtime.json",
       "package.json"
     ],
+    "extraMetadata": {
+      "config": {
+        "rootUrl": "https://xvibe.me",
+        "host": "https://xvibe.me",
+        "headless": true,
+        "maxImages": 100,
+        "defaultWait": 3000
+      }
+    },
     "asar": true,
     "win": {
       "target": "nsis",
-      "icon": "icon.ico"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,

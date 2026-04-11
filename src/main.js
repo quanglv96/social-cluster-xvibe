@@ -21,7 +21,38 @@ function nowIso() {
 }
 
 setupGlobalErrorHandler();
+function clearRuntimeConfigIfVersionChanged() {
+    const userDataPath = app.getPath('userData');
+    const configPath = path.join(userDataPath, 'config.runtime.json');
+    const versionPath = path.join(userDataPath, 'app.version');
 
+    const currentVersion = app.getVersion();
+
+    try {
+        // Đọc version cũ
+        const savedVersion = fs.existsSync(versionPath)
+            ? fs.readFileSync(versionPath, 'utf-8').trim()
+            : null;
+
+        if (savedVersion !== currentVersion) {
+            // Version thay đổi → clear cache
+            if (fs.existsSync(configPath)) {
+                fs.unlinkSync(configPath);
+                log('CONFIG', '🧹 cleared stale runtime config', {
+                    oldVersion: savedVersion,
+                    newVersion: currentVersion
+                });
+            }
+
+            // Lưu version mới
+            fs.writeFileSync(versionPath, currentVersion);
+            log('CONFIG', '📌 version stamp updated', { version: currentVersion });
+        }
+
+    } catch (err) {
+        logError('CONFIG', 'cache invalidation failed', { error: err.message });
+    }
+}
 function formatLog(module, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
     return `[${nowIso()}] [${module}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
@@ -56,6 +87,7 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        icon: path.join(process.resourcesPath, 'icon.ico'), // 🔥 quan trọng
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
@@ -83,7 +115,10 @@ function startServer() {
         {
             env: {
                 ...process.env,
-                RUNTIME_CONFIG_PATH: path.join(userDataPath, 'config.runtime.json')
+                RUNTIME_CONFIG_PATH: path.join(userDataPath, 'config.runtime.json'),
+                PORTABLE_EXECUTABLE_DIR: process.env.PORTABLE_EXECUTABLE_DIR
+                    || path.dirname(process.execPath),
+                FB_PROFILES_DIR: path.join(userDataPath, 'fb_profiles'), // ← AppData, an toàn
             }
         }
     );
@@ -202,6 +237,7 @@ ipcMain.on("update-config", (_, data) => {
 // ======================
 app.whenReady().then(() => {
     log('APP', '🟢 ready');
+    clearRuntimeConfigIfVersionChanged();
     createWindow();
     startServer();
 });
