@@ -37,8 +37,8 @@ window.stop = () => ipcRenderer.send("control", "stop");
 window.restart = () => ipcRenderer.send("control", "restart");
 
 window.save = () => {
-    const rootUrl = document.getElementById("rootUrl").value;
-    ipcRenderer.send("update-config", { rootUrl });
+    const host = document.getElementById("hostUrl").value;
+    ipcRenderer.send("update-config", { host });
 };
 
 // ======================

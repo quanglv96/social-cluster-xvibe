@@ -8,6 +8,12 @@
   },
   "build": {
     "appId": "com.mycompany.fbcrawler",
+    "files": [
+      "src/**/*",
+      "!src/config/config.runtime.json",
+      "package.json"
+    ],
+    "asar": true,
     "win": {
       "target": "nsis",
       "icon": "icon.ico"

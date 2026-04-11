@@ -4,6 +4,7 @@ import path from 'path';
 import {fileURLToPath} from 'url';
 import {fork} from 'child_process';
 import {setupGlobalErrorHandler} from "./config/globalErrorHandler.js";
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -166,16 +167,33 @@ function restartServer() {
 }
 
 ipcMain.on("update-config", (_, data) => {
-    log('CONFIG', '📝 update received');
 
-    if (serverProcess) {
-        serverProcess.send({type: "CONFIG_UPDATE", payload: data});
-        log('CONFIG', 'sent CONFIG_UPDATE to server process', {pid: serverProcess.pid});
+    const userDataPath = app.getPath('userData');
+    const configPath = path.join(userDataPath, 'config.runtime.json');
 
-        // 🔥 restart sau khi update
-        restartServer();
-    } else {
-        logWarn('CONFIG', 'update received but server is not running');
+    log('CONFIG', '📝 update received', {
+        hasServer: !!serverProcess
+    });
+
+    try {
+        // 🔥 GHI FILE CONFIG (nguồn duy nhất)
+        fs.writeFileSync(configPath, JSON.stringify(data, null, 2));
+
+        log('CONFIG', '💾 config saved', {
+            path: configPath
+        });
+
+        // 🔥 luôn restart để apply config mới
+        if (serverProcess) {
+            restartServer();
+        } else {
+            logWarn('CONFIG', 'server not running — skip restart');
+        }
+
+    } catch (err) {
+        logError('CONFIG', 'failed to save config', {
+            error: err.message
+        });
     }
 });
 

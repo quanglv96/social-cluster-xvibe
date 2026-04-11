@@ -333,9 +333,9 @@ process.on('message', async (msg) => {
 
     if (msg.type === 'CONFIG_UPDATE') {
         const { updateConfig } = await import('./config/config.js');
-
+        // 🔥 GHI FILE (QUAN TRỌNG NHẤT)
         const needRestart =
-            msg.payload.rootUrl ||
+            msg.payload.host ||
             msg.payload.apiImportImage ||
             msg.payload.apiUpdatePage;
 

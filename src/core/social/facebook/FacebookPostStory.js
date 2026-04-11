@@ -94,7 +94,7 @@ export class FacebookPostStory {
             }
 
             logOk(TAG, `Story process completed`);
-            return { success: true };
+            return { success: true,list_image:list_image };
 
         } finally {
             for (const file of tempFiles) {

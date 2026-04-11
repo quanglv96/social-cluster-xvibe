@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-
+import dotenv from 'dotenv'; dotenv.config();
 // runtime path
 const RUNTIME_PATH =
     process.env.RUNTIME_CONFIG_PATH
@@ -36,7 +36,8 @@ const toNumber = (val, def) => {
 // =============================
 // Base (🔥 Ưu tiên persisted)
 // =============================
-const ROOT_URL = persisted.rootUrl || toStr(process.env.ROOT_URL);
+const ROOT_URL = toStr(process.env.ROOT_URL);
+const HOST = persisted.host || toStr(process.env.HOST);
 
 // =============================
 // Config (immutable base)
@@ -45,9 +46,8 @@ export const config = {
     headless: toBool(process.env.HEADLESS, true),
 
     rootUrl: ROOT_URL,
-
-    api: buildApi(ROOT_URL),
-
+    host: HOST,
+    api: buildApi(HOST),
     maxImages: toNumber(process.env.MAX_IMAGES, 100),
     defaultWait: toNumber(process.env.DEFAULT_WAIT, 3000),
 
@@ -62,15 +62,15 @@ export const runtimeConfig = JSON.parse(JSON.stringify(config));
 // =============================
 // API builder
 // =============================
-function buildApi(root) {
+function buildApi(host) {
     return {
-        apiImportImage: `${root}/api/vibe/import-image`,
-        apiUpdatePage: `${root}/api/vibe/update-crawls`,
-        apiUpdateCookie: `${root}/api/vibe/update-cookies`,
-        apiLogError: `${root}/api/vibe/internal/error-fb-crawls`,
-        apiLogCheckPoint: `${root}/api/vibe/internal/log-check-point`,
-        apiRegisterSever: `${root}/api/vibe/register-sever-social`,
-        apiCallbackResponse: `${root}/api/vibe/social-callback`,
+        apiImportImage: `${host}/api/vibe/import-image`,
+        apiUpdatePage: `${host}/api/vibe/update-crawls`,
+        apiUpdateCookie: `${host}/api/vibe/update-cookies`,
+        apiLogError: `${host}/api/vibe/internal/error-fb-crawls`,
+        apiLogCheckPoint: `${host}/api/vibe/internal/log-check-point`,
+        apiRegisterSever: `${host}/api/vibe/register-sever-social`,
+        apiCallbackResponse: `${host}/api/vibe/social-callback`,
     };
 }
 
@@ -94,33 +94,29 @@ export function updateConfig(newConfig = {}) {
 
     let changed = false;
 
-    // 🔥 handle rootUrl (quan trọng nhất)
-    if (newConfig.rootUrl) {
-        const root = newConfig.rootUrl.trim();
-
-        if (root !== runtimeConfig.rootUrl) {
-            runtimeConfig.rootUrl = root;
-            runtimeConfig.api = buildApi(root);
-            changed = true;
-
-            console.log("🌐 New host:", root);
-        }
+    if (newConfig.host && newConfig.host !== runtimeConfig.host) {
+        runtimeConfig.host = newConfig.host.trim();
+        runtimeConfig.api = buildApi(runtimeConfig.host);
+        changed = true;
     }
 
-    // 🔥 các field khác
-    Object.keys(newConfig).forEach(key => {
-        if (key !== 'rootUrl' && key in runtimeConfig) {
+    if (newConfig.rootUrl) {
+        console.warn("⚠️ rootUrl is immutable");
+    }
+
+    for (const key of Object.keys(newConfig)) {
+        if (!['host', 'rootUrl'].includes(key) && key in runtimeConfig) {
             runtimeConfig[key] = newConfig[key];
             changed = true;
         }
-    });
+    }
 
-    // 🔥 persist nếu có thay đổi
     if (changed) {
         persistConfig({
-            rootUrl: runtimeConfig.rootUrl
+            host: runtimeConfig.host,
+            // rootUrl: runtimeConfig.rootUrl
         });
     }
 
-    console.log("⚡ Updated config:", JSON.stringify(runtimeConfig, null, 2));
+    console.log("⚡ Updated config:", runtimeConfig);
 }
