@@ -221,7 +221,6 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
         try {
             await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime);
         } finally {
-            reportError(); // 🔥 điểm quan trọng
             log(requestId, `🏁 DONE`, {
                 action: actionName,
                 queue: Math.max(QUEUE_SIZE - 1, 0),
