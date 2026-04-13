@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createRequire } from 'module';
+import os from 'os';  // ← thêm dòng này
 
 const require = createRequire(import.meta.url);
 const envPath = process.env.PORTABLE_EXECUTABLE_DIR
@@ -62,6 +63,10 @@ const HOST = persisted.host || toStr(process.env.HOST) || builtinConfig.host || 
 // =============================
 // Config (immutable base)
 // =============================
+const USER_DATA_DIR =
+    process.env.APPDATA                          // Windows: C:\Users\xxx\AppData\Roaming
+    || process.env.HOME                          // macOS/Linux: /Users/xxx
+    || os.homedir();
 export const config = {
     headless: toBool(process.env.HEADLESS, builtinConfig.headless ?? true),
     rootUrl: ROOT_URL,
@@ -69,8 +74,8 @@ export const config = {
     api: buildApi(HOST),
     maxImages: toNumber(process.env.MAX_IMAGES, builtinConfig.maxImages ?? 100),
     defaultWait: toNumber(process.env.DEFAULT_WAIT, builtinConfig.defaultWait ?? 3000),
-    facebookProfileDir: process.env.FB_PROFILES_DIR || './fb_profiles', // ← thêm fallback
-    twitterProfileDir: process.env.TW_PROFILES_DIR || './twitter-profiles', // ← thêm fallback
+    facebookProfileDir: process.env.FB_PROFILES_DIR || path.join(USER_DATA_DIR, 'SocialCluster', 'fb-profiles'),
+    twitterProfileDir: process.env.TW_PROFILES_DIR || path.join(USER_DATA_DIR, 'SocialCluster', 'twitter-profiles'),
 };
 
 // =============================
