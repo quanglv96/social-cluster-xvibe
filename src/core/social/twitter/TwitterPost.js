@@ -1,6 +1,7 @@
 import fs from 'fs';
 import axios from 'axios';
 import path from 'path';
+import os from 'os';
 import twemoji from 'twitter-text';
 
 // =========================
@@ -53,7 +54,7 @@ export class TwitterPost {
     }
 
     async downloadImage(url, index) {
-        const filePath = path.resolve(`./tw_image_${index}.jpg`);
+        const filePath = path.join(os.tmpdir(), `tw_image_${index}_${Date.now()}.jpg`);
         const response = await axios({ url, method: 'GET', responseType: 'stream' });
         const writer = fs.createWriteStream(filePath);
         response.data.pipe(writer);
