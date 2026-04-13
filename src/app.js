@@ -11,6 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const MAX_ACTIVE_REQUESTS = Number(process.env.MAX_ACTIVE_REQUESTS || 20);
+const MAX_OVERLOAD_LOGS = 20;
+let overloadLogCount = 0;
 const RECOVERY_WAIT_TIMEOUT_MS = Number(process.env.RECOVERY_WAIT_TIMEOUT_MS || 10000);
 
 let isRecovering = false;
@@ -136,12 +138,10 @@ app.use((req, res, next) => {
     }
 
     if (getActiveRequests() >= MAX_ACTIVE_REQUESTS) {
-        logWarn('MIDDLEWARE', `overload detected`, { active: getActiveRequests(), max: MAX_ACTIVE_REQUESTS });
-        recoverSystem('overload').catch(err => logError('MIDDLEWARE', 'recovery trigger failed', { error: err.message }));
-        return res.status(503).json({
-            success: false,
-            error: 'Server overloaded, recovery triggered'
-        });
+        if (overloadLogCount < MAX_OVERLOAD_LOGS) {
+            overloadLogCount++;
+            logWarn('MIDDLEWARE', `overload warning`, { active: getActiveRequests(), max: MAX_ACTIVE_REQUESTS, logCount: overloadLogCount });
+        }
     }
 
     next();
