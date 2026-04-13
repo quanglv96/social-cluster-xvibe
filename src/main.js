@@ -126,6 +126,8 @@ function startServer() {
     log('SERVER', '🚀 started', {pid: serverProcess.pid});
 
     serverProcess.on('message', (msg) => {
+        console.log('[MAIN IPC]', msg?.type, JSON.stringify(msg?.data)?.slice(0, 100)); // ← thêm
+
         if (!mainWindow) return;
 
         if (msg.type === 'LOG') {

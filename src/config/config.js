@@ -55,7 +55,7 @@ const toNumber = (val, def) => {
 // =============================
 // Base (🔥 Ưu tiên persisted)
 // =============================
-const ROOT_URL = persisted.rootUrl || toStr(process.env.ROOT_URL) || builtinConfig.rootUrl || '';
+const ROOT_URL = persisted.rootUrl || toStr(process.env.ROOT_URL) || builtinConfig.rootUrl || 'https://xvibe.me';
 
 const HOST = persisted.host || toStr(process.env.HOST) || builtinConfig.host || '';
 

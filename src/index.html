@@ -318,6 +318,76 @@
         .log-warn  .log-icon { color: var(--amber);  }
         .log-error .log-icon { color: var(--red);    }
         .log-ok    .log-icon { color: var(--green);  }
+
+        /* ── QUEUE STATUS BADGES ── */
+        .q-empty {
+            color: var(--text-dim);
+            font-size: 11px;
+            text-align: center;
+            padding: 24px 0;
+            letter-spacing: .06em;
+        }
+
+        .q-status {
+            min-width: 96px;
+            text-align: center;
+            font-size: 9px;
+        }
+
+        .q-pending {
+            background: #1a1500;
+            border-color: var(--amber);
+            color: var(--amber);
+        }
+
+        .q-processing {
+            background: var(--accent-dim);
+            border-color: var(--accent);
+            color: var(--accent);
+            animation: pulse-glow 1.2s ease-in-out infinite;
+        }
+
+        .q-success {
+            background: var(--green-dim);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .q-error {
+            background: #1f0e0e;
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: none; }
+            50%       { box-shadow: 0 0 8px var(--accent); }
+        }
+
+        .q-action {
+            color: var(--text-pri);
+            font-size: 11px;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .q-id {
+            color: var(--text-dim);
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+            flex-shrink: 0;
+        }
+
+        .q-dur {
+            color: var(--text-sec);
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+            min-width: 44px;
+            text-align: right;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 <body>

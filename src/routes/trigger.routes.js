@@ -16,6 +16,7 @@ const router = express.Router();
 let ACTIVE_REQUESTS = 0;
 let EVENT_PAGE_SEQ = 0;
 let QUEUE_SIZE = 0;
+let TOTAL_REQUESTS = 0; // tổng requests đã nhận, chỉ tăng không giảm
 
 // =========================
 // Utils
@@ -107,7 +108,7 @@ async function sendCallback(callbackUrl, schedulerId, requestId, actionName, dto
         const body = {
             request_id: requestId,
             scheduler_id: schedulerId,
-            type: dtoType,         // CRAWLS_FB | CRAWLS_TW | POST_GROUP_FB | POST_STORY | POST_TWEET | POST_PROFILE — Java dùng để phân loại
+            type: dtoType,
             success,
             ...data
         };
@@ -127,31 +128,91 @@ async function sendCallback(callbackUrl, schedulerId, requestId, actionName, dto
 }
 
 // =========================
-// FIFO Queue
+// FIFO Queue — PENDING / PROCESSING / SUCCESS / ERROR
 // =========================
 
-const queue = [];
+// taskRegistry: Map<id, { id, action, status, enqueuedAt, endedAt, fn }>
+const taskRegistry = new Map();
+const pendingQueue = []; // chỉ chứa id đang chờ xử lý
 let processing = false;
 
-function enqueue(task) {
-    queue.push(task);
-    processQueue().catch((err) => {
-        logError('QUEUE', 'processQueue failed', err);
-    });
+function buildQueueItems() {
+    return [...taskRegistry.values()].map(t => ({
+        id:         t.id,
+        action:     t.action,
+        status:     t.status,
+        enqueuedAt: t.enqueuedAt,
+        duration:   (t.endedAt ?? Date.now()) - t.enqueuedAt,
+    }));
+}
+
+// Export để app.js đọc trong stats interval
+export function getQueueItems() {
+    return buildQueueItems();
+}
+
+export function getActiveRequests() {
+    return TOTAL_REQUESTS;
+}
+
+function sendQueueToUI() {
+    process.send?.({ type: 'queue', data: buildQueueItems() });
+}
+
+function enqueue(task, meta = {}) {
+    const entry = {
+        id:         meta.id || buildRequestId('TASK'),
+        action:     meta.action || 'UNKNOWN',
+        enqueuedAt: Date.now(),
+        status:     'PENDING',
+        fn:         task,
+        endedAt:    null,
+    };
+
+    taskRegistry.set(entry.id, entry);
+    pendingQueue.push(entry.id);
+    sendQueueToUI();
+
+    processQueue().catch(err => logError('QUEUE', 'processQueue failed', err));
+}
+
+// Nhả event loop để IPC message kịp flush tới renderer
+function yieldToUI() {
+    return new Promise(resolve => setImmediate(resolve));
 }
 
 async function processQueue() {
     if (processing) return;
     processing = true;
+
     try {
-        while (queue.length > 0) {
-            const task = queue.shift();
+        while (pendingQueue.length > 0) {
+            const id    = pendingQueue.shift();
+            const entry = taskRegistry.get(id);
+            if (!entry) continue;
+
+            // → PROCESSING: yield trước để renderer kịp render PENDING
+            await yieldToUI();
+            entry.status = 'PROCESSING';
+            sendQueueToUI();
+            await yieldToUI(); // yield thêm lần nữa để PROCESSING flush trước khi task bắt đầu
+
             try {
-                await task();
+                await entry.fn();
+                entry.status = 'SUCCESS';
             } catch (err) {
+                entry.status = 'ERROR';
                 logError('QUEUE', 'task failed', err);
             } finally {
-                QUEUE_SIZE--;
+                entry.endedAt = Date.now();
+                QUEUE_SIZE = Math.max(0, QUEUE_SIZE - 1);
+                sendQueueToUI();
+
+                // Giữ SUCCESS/ERROR trên UI 5s rồi xóa
+                setTimeout(() => {
+                    taskRegistry.delete(id);
+                    sendQueueToUI();
+                }, 5000);
             }
         }
     } finally {
@@ -170,11 +231,11 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
     const schedulerId = dto.scheduler_id;
     const requestTrace = dto.type + "_" + schedulerId;
 
-    // Java truyền callback_url vào body hoặc header
     const callbackUrl = runtimeConfig.api.apiCallbackResponse;
     const dtoType = dto.type || actionName;
 
     QUEUE_SIZE++;
+    TOTAL_REQUESTS++;
 
     const separator = '\n' + '='.repeat(80);
     sendToRenderer('info', separator);
@@ -208,7 +269,6 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
             active: ACTIVE_REQUESTS,
         });
 
-        // res giả — thay HTTP response bằng callback
         const fakeRes = {
             headersSent: false,
             _statusCode: 200,
@@ -218,6 +278,7 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
                     .catch(() => {});
             }
         };
+
         try {
             await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime);
         } finally {
@@ -230,11 +291,11 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
             const closingSeparator = '='.repeat(80);
             sendToRenderer('info', closingSeparator);
         }
-    });
+    }, { id: requestId, action: actionName }); // ← meta cho taskRegistry
 }
 
 // =========================
-// handleRequest — không đổi logic, chỉ dùng fakeRes
+// handleRequest
 // =========================
 
 async function handleRequest(req, res, actionName, TriggerClass, requestId, startTime) {
@@ -364,7 +425,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
         if (SessionManager.navigator) {
             const nextActive = ACTIVE_REQUESTS - 1;
-            if (nextActive === 0 && queue.length === 0) {
+            if (nextActive === 0 && pendingQueue.length === 0) {
                 setTimeout(() => {
                     SessionManager.navigator.start().catch(() => {});
                 }, 0);
@@ -397,11 +458,11 @@ async function sendErrorLog(payload) {
         });
 
         if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`); // ← throw Error, không phải object
+            throw new Error(`HTTP ${res.status}`);
         }
     } catch (e) {
         logError('SEND_ERROR_LOG', 'cannot send log to API', e);
-        throw e; // ← re-throw để caller biết
+        throw e;
     }
 }
 

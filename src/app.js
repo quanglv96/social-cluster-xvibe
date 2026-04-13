@@ -1,6 +1,6 @@
 import express from 'express';
 import http from 'http';
-import triggerRoutes from './routes/trigger.routes.js';
+import triggerRoutes, { getQueueItems, getActiveRequests } from './routes/trigger.routes.js';
 import {BrowserManager} from './core/browser/BrowserManager.js';
 import {AppRegistryService} from "./AppRegistryService.js";
 import {TunnelService} from "./TunnelService.js";
@@ -15,7 +15,6 @@ const RECOVERY_WAIT_TIMEOUT_MS = Number(process.env.RECOVERY_WAIT_TIMEOUT_MS || 
 
 let isRecovering = false;
 let isHealthy = false;
-let activeRequests = 0;
 let recoveryPromise = null;
 
 // =========================
@@ -36,9 +35,9 @@ function safeToError(value) {
 
 async function waitForActiveRequestsToDrain(timeoutMs = RECOVERY_WAIT_TIMEOUT_MS) {
     const start = Date.now();
-    while (activeRequests > 0) {
+    while (getActiveRequests() > 0) {
         if (Date.now() - start >= timeoutMs) {
-            logWarn('RECOVERY', `drain timeout, remaining=${activeRequests}`);
+            logWarn('RECOVERY', `drain timeout, remaining=${getActiveRequests()}`);
             return false;
         }
         await sleep(200);
@@ -136,38 +135,14 @@ app.use((req, res, next) => {
         });
     }
 
-    if (activeRequests >= MAX_ACTIVE_REQUESTS) {
-        logWarn('MIDDLEWARE', `overload detected`, { active: activeRequests, max: MAX_ACTIVE_REQUESTS });
+    if (getActiveRequests() >= MAX_ACTIVE_REQUESTS) {
+        logWarn('MIDDLEWARE', `overload detected`, { active: getActiveRequests(), max: MAX_ACTIVE_REQUESTS });
         recoverSystem('overload').catch(err => logError('MIDDLEWARE', 'recovery trigger failed', { error: err.message }));
         return res.status(503).json({
             success: false,
             error: 'Server overloaded, recovery triggered'
         });
     }
-
-    activeRequests++;
-    const taskId = `task_${Date.now()}_${req.body.type}_${req.body.scheduler_id}`;
-
-    queue.push(taskId);
-    activeRequests++;
-
-    processing.set(taskId, {
-        url: req.originalUrl,
-        start: Date.now()
-    });
-
-    let released = false;
-    const release = () => {
-        if (!released) {
-            released = true;
-            activeRequests = Math.max(0, activeRequests - 1);
-            processing.delete(taskId);
-            queue = queue.filter(q => q !== taskId);
-        }
-    };
-
-    res.on('finish', release);
-    res.on('close', release);
 
     next();
 });
@@ -320,20 +295,13 @@ function sendToUI(type, data) {
     }
 }
 
-// override console.log để đẩy lên UI — chỉ plain log, logWarn/logError tự gọi sendToUI
 const originalLog = console.log;
-// console.log = (...args) => {
-//     const msg = args.join(' ');
-//     originalLog(msg);
-//     sendToUI('log', { type: 'info', msg });
-// };
 
 process.on('message', async (msg) => {
     if (!msg) return;
 
     if (msg.type === 'CONFIG_UPDATE') {
         const { updateConfig } = await import('./config/config.js');
-        // 🔥 GHI FILE (QUAN TRỌNG NHẤT)
         const needRestart =
             msg.payload.host ||
             msg.payload.apiImportImage ||
@@ -361,12 +329,11 @@ process.on('message', async (msg) => {
 });
 
 // =========================
-// Stats & Queue
+// Stats interval — chỉ gửi stats, KHÔNG gửi queue
+// Queue được gửi realtime từ trigger.routes.js qua sendQueueToUI()
 // =========================
 
 let errorCount = 0;
-let queue = [];
-let processing = new Map();
 
 export function reportError() {
     errorCount++;
@@ -380,14 +347,12 @@ setInterval(() => {
     sendToUI('stats', {
         cpu: cpuLoad.toFixed(2),
         memory,
-        requests: activeRequests,
+        requests: getActiveRequests(),
         error: errorCount
     });
 
-    sendToUI('queue', queue.map(id => {
-        const p = processing.get(id);
-        return { id, url: p?.url, duration: p ? (Date.now() - p.start) : 0 };
-    }));
+    // ✅ Đồng bộ queue từ routes mỗi giây (backup, phòng khi realtime miss)
+    sendToUI('queue', getQueueItems());
 
 }, 1000);
 
