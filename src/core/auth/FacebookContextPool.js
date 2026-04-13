@@ -1,97 +1,143 @@
-import { BrowserManager } from '../browser/BrowserManager.js';
-import { FacebookAuth } from '../../auth/FacebookAuth.js';
-import { config } from '../../config/config.js';
+import { config, runtimeConfig } from '../../config/config.js';
+import path from 'path';
+import fs from 'fs';
+import { FacebookAuth } from "./FacebookAuth.js";
+import { chromium } from "playwright";
 
-/**
- * Pool context theo từng Facebook account (key = type).
- * Mỗi account có 1 context riêng, tái sử dụng trong lifeHours ngẫu nhiên.
- */
+// =========================
+// Log Utils (chuẩn hệ thống)
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(requestId, message, fields = {}) {
+    const fieldStr = Object.entries(fields)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(' ');
+
+    return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
+}
+
+function log(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(requestId, message, err, fields = {}) {
+    const msg = formatMsg(requestId, `❌ ${message}`, {
+        ...fields,
+        error: err?.message || err
+    });
+    sendToRenderer('error', msg);
+}
+
+function logOk(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+// Class
+// =========================
+
+const TAG = 'FB_POOL';
+
 export class FacebookContextPool {
 
-    // Map<type, { context, createdAt, lifeHours, rootPage }>
     static #pool = new Map();
-    static #locks = new Map(); // chống race condition khi init
-
-    // ─────────────────────────────────────────
-    // PUBLIC
-    // ─────────────────────────────────────────
+    static #locks = new Map();
 
     static async getContext(dto) {
-        const key = dto.type;
+        const key = dto.user_name;
+        const requestId = `${TAG}_${key}`;
 
-        if (!key) throw new Error('[FacebookContextPool] dto.type is required');
+        if (!key) throw new Error('username is required');
 
         const entry = this.#pool.get(key);
-        const expired = entry ? this.#isExpired(entry) : true;
+        const expired = entry ? this.#isExpired(entry, requestId) : true;
 
         if (!entry || expired) {
-            await this.#ensureInit(dto);
+            await this.#ensureInit(dto, requestId);
         }
 
         return this.#pool.get(key).context;
     }
 
     static async getRootPage(dto) {
+        const key = dto.user_name;
+        const requestId = `${TAG}_${key}`;
+
         const context = await this.getContext(dto);
-        const key = dto.type;
         const entry = this.#pool.get(key);
 
         if (!entry.rootPage || entry.rootPage.isClosed()) {
+            log(requestId, 'Creating rootPage');
+
             entry.rootPage = await context.newPage();
-            await entry.rootPage.goto(config.rootUrl, {
+            await entry.rootPage.goto(runtimeConfig.rootUrl, {
                 waitUntil: 'domcontentloaded'
             });
+
+        } else {
+            log(requestId, 'Reusing rootPage');
         }
 
         return entry.rootPage;
     }
 
     static async createEventPage(dto) {
+        const key = dto.user_name;
+        const requestId = `${TAG}_${key}`;
+
         const context = await this.getContext(dto);
-        return await context.newPage();
+        const entry = this.#pool.get(key);
+
+        if (!entry.eventPage || entry.eventPage.isClosed()) {
+            entry.eventPage = await context.newPage();
+            await entry.eventPage.goto('https://www.facebook.com/', {
+                waitUntil: 'domcontentloaded'
+            });
+
+            logOk(requestId, 'eventPage created');
+
+        } else {
+            log(requestId, 'eventPage reused');
+        }
+
+        return entry.eventPage;
     }
 
-    static async closeContext(type) {
-        const entry = this.#pool.get(type);
+    static async closeContext(userName) {
+        const requestId = `${TAG}_${userName}`;
+        const entry = this.#pool.get(userName);
         if (!entry) return;
 
-        try {
-            await entry.context.close();
-        } catch (e) {
-            console.warn(`[FacebookContextPool] close error [${type}]:`, e.message);
-        }
+        await entry.context.close();
+        this.#pool.delete(userName);
 
-        this.#pool.delete(type);
-        console.log(`[FacebookContextPool] Context closed and removed [${type}]`);
+        logWarn(requestId, 'Context closed manually');
     }
 
-    static poolStatus() {
-        const result = {};
-        for (const [key, entry] of this.#pool.entries()) {
-            result[key] = {
-                createdAt: new Date(entry.createdAt).toISOString(),
-                lifeHours: entry.lifeHours,
-                expiredIn: Math.round(
-                    (entry.createdAt + entry.lifeHours * 3600_000 - Date.now()) / 60_000
-                ) + 'min'
-            };
-        }
-        return result;
-    }
+    static async #ensureInit(dto, requestId) {
+        const key = dto.user_name;
 
-    // ─────────────────────────────────────────
-    // PRIVATE
-    // ─────────────────────────────────────────
-
-    static async #ensureInit(dto) {
-        const key = dto.type;
-
-        // Chống race condition: nếu đang init thì chờ
         if (this.#locks.has(key)) {
+            log(requestId, 'Waiting for existing init lock');
             return this.#locks.get(key);
         }
 
-        const promise = this.#initContext(dto);
+        const promise = this.#initContext(dto, requestId);
         this.#locks.set(key, promise);
 
         try {
@@ -101,77 +147,103 @@ export class FacebookContextPool {
         }
     }
 
-    static async #initContext(dto) {
-        const key = dto.type;
+    static async #initContext(dto, requestId) {
+        const key = dto.user_name;
+        const safeKey = key.replace(/[^a-zA-Z0-9]/g, '_');
 
-        console.log(`[FacebookContextPool] Initializing context [${key}]...`);
+        log(requestId, 'Init context');
 
-        // Đóng context cũ nếu có
-        const old = this.#pool.get(key);
-        if (old) {
-            try { await old.context.close(); } catch (_) {}
+        const profileDir = path.resolve(runtimeConfig.facebookProfileDir, safeKey);
+
+        if (!fs.existsSync(profileDir)) {
+            fs.mkdirSync(profileDir, { recursive: true });
         }
 
-        const browser = await BrowserManager.getBrowser();
+        let context;
 
-        // Rotate fingerprint nhẹ để tránh detect
-        const context = await browser.newContext({
-            viewport: this.#randomViewport(),
-            userAgent: this.#randomUserAgent(),
-            locale: 'en-US',
-            timezoneId: 'Asia/Ho_Chi_Minh',
-        });
+        try {
+            context = await chromium.launchPersistentContext(profileDir, {
+                headless: false,
+                args: [
+                    '--disable-blink-features=AutomationControlled',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox'
+                ],
+                viewport: { width: 1366, height: 768 }
+            });
 
-        await context.addInitScript(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        });
+            context.on('close', () => {
+                logWarn(requestId, 'Context closed unexpectedly');
+                this.#pool.delete(key);
+            });
 
-        // Authenticate ngay khi tạo context
-        const auth = new FacebookAuth();
-        await auth.authenticate(context, dto);
+            await context.addInitScript(() => {
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => false
+                });
+            });
 
-        const lifeHours = this.#random(5, 24);
+            const page = await context.newPage();
 
-        this.#pool.set(key, {
-            context,
-            createdAt: Date.now(),
-            lifeHours,
-            rootPage: null
-        });
+            await page.goto('https://www.facebook.com/', {
+                waitUntil: 'domcontentloaded'
+            });
 
-        console.log(
-            `[FacebookContextPool] Context ready [${key}] lifetime=${lifeHours}h`
-        );
+            const url = page.url();
+            const cookies = await context.cookies();
+
+            const isLoggedIn =
+                cookies.some(c => c.name === 'c_user') &&
+                !url.includes('login') &&
+                !url.includes('checkpoint');
+
+            log(requestId, 'Login check', { url, isLoggedIn });
+
+            if (!isLoggedIn) {
+                logWarn(requestId, 'Not logged in → run auth');
+                const auth = new FacebookAuth();
+                await auth.authenticate(context, dto);
+            }
+
+            await page.close();
+
+            const old = this.#pool.get(key);
+            if (old) {
+                try { await old.context.close(); } catch (_) {}
+            }
+
+            const lifeHours = this.#random(5, 24);
+
+            this.#pool.set(key, {
+                context,
+                createdAt: Date.now(),
+                lifeHours,
+                rootPage: null
+            });
+
+            logOk(requestId, 'Context ready', { lifeHours });
+
+        } catch (err) {
+            logError(requestId, 'Init context failed', err);
+            if (context) {
+                try { await context.close(); } catch (_) {}
+            }
+            throw err;
+        }
     }
 
-    static #isExpired(entry) {
+    static #isExpired(entry, requestId) {
         const maxLife = entry.lifeHours * 3600_000;
         const expired = Date.now() - entry.createdAt > maxLife;
-        if (expired) console.log('[FacebookContextPool] Context expired, reinit...');
+
+        if (expired) {
+            logWarn(requestId, 'Context expired → reinit');
+        }
+
         return expired;
     }
 
     static #random(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-
-    static #randomViewport() {
-        const sizes = [
-            { width: 1366, height: 768 },
-            { width: 1440, height: 900 },
-            { width: 1536, height: 864 },
-            { width: 1920, height: 1080 },
-        ];
-        return sizes[Math.floor(Math.random() * sizes.length)];
-    }
-
-    static #randomUserAgent() {
-        const agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-        ];
-        return agents[Math.floor(Math.random() * agents.length)];
     }
 }

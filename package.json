@@ -3,7 +3,37 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node src/app.js"
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.mycompany.fbcrawler",
+    "productName": "Social Cluster X-Vibe",
+    "artifactName": "${productName}-v${version}.${ext}",
+    "files": [
+      "src/**/*",
+      "!src/config/config.runtime.json",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "config": {
+        "rootUrl": "https://xvibe.me",
+        "host": "https://xvibe.me",
+        "headless": true,
+        "maxImages": 100,
+        "defaultWait": 3000
+      }
+    },
+    "asar": true,
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "axios": "^1.13.5",
@@ -13,11 +43,17 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "form-data": "^4.0.5",
+    "localtunnel": "^2.0.2",
+    "ngrok": "^5.0.0-beta.2",
     "playwright": "^1.58.2",
     "twitter-text": "^3.1.0"
   },
+  "devDependencies": {
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1"
+  },
   "description": "",
-  "main": "test-cookie.js",
+  "main": "src/main.js",
   "keywords": [],
   "author": "",
   "license": "ISC"

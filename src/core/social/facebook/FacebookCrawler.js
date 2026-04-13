@@ -1,4 +1,45 @@
-import {config} from "../../../config/config.js";
+import { runtimeConfig} from "../../../config/config.js";
+
+// =========================
+// Log Utils
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(requestId, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
+}
+
+function log(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(requestId, message, err) {
+    const msg = formatMsg(requestId, `❌ ${message}`, { error: err?.message || err });
+    sendToRenderer('error', msg);
+}
+
+function logOk(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+// Crawler
+// =========================
 
 export class FacebookCrawler {
 
@@ -17,114 +58,97 @@ export class FacebookCrawler {
 
         const crawlId = id || `CRAWL_${Date.now()}`;
         const startTime = Date.now();
+        const separator = '='.repeat(60);
 
-        console.log(`[${crawlId}] =============================`);
-        console.log(`[${crawlId}] 📸 START FACEBOOK CRAWL`);
-        console.log(`[${crawlId}] Last image: ${last_image}`);
-        console.log(`[${crawlId}] 🌐 Using injected event page`);
+        log(crawlId, separator);
+        log(crawlId, `📸 START FACEBOOK CRAWL`, { last_image });
 
         try {
 
-            console.log(`[${crawlId}] ➡ Navigating to viewer...`);
-            await page.goto(last_image, {waitUntil: 'domcontentloaded'});
+            log(crawlId, `➡️ Navigating to viewer...`);
+            await page.goto(last_image, { waitUntil: 'domcontentloaded' });
             await page.waitForTimeout(5000);
-            console.log(`[${crawlId}] ✅ Viewer loaded`);
-            //
+            logOk(crawlId, `Viewer loaded`);
+
             // 🔥 Click nút toàn màn hình nếu tồn tại
-            //
             try {
                 const fullscreenButton = await page.$(
                     'div[aria-label="Chuyển sang toàn màn hình"][role="button"], div[aria-label="Switch to fullscreen"][role="button"]'
                 );
 
                 if (fullscreenButton) {
-                    console.log(`[${crawlId}] 🖥 Switching to fullscreen mode...`);
+                    log(crawlId, `🖥️ Switching to fullscreen mode...`);
                     await fullscreenButton.click();
                     await page.waitForTimeout(2000);
-                    console.log(`[${crawlId}] ✅ Fullscreen activated`);
+                    logOk(crawlId, `Fullscreen activated`);
                 } else {
-                    console.log(`[${crawlId}] ℹ Fullscreen button not found`);
+                    log(crawlId, `Fullscreen button not found`);
                 }
-
             } catch (err) {
-                console.log(`[${crawlId}] ⚠ Fullscreen click failed: ${err.message}`);
+                logWarn(crawlId, `Fullscreen click failed`, { error: err.message });
             }
+
             const images = [];
             let newLastUrl = last_image;
+            const MAX_IMAGES = runtimeConfig.maxImages;
 
-            const MAX_IMAGES = config.maxImages;
             while (images.length < MAX_IMAGES) {
 
-                console.log(
-                    `[${crawlId}] 🔍 Extracting image ${images.length + 1}/${MAX_IMAGES}`
-                );
+                log(crawlId, `🔍 Extracting image`, {
+                    current: images.length + 1,
+                    max: MAX_IMAGES,
+                });
 
                 const imageData = await page.evaluate(() => {
-
                     const img = document.querySelector('img[data-visualcompletion="media-vc-image"]');
-
                     if (!img) return null;
-
                     if (!img.src) return null;
-
                     if (img.src.startsWith('data:image')) return null;
-
                     return {
                         url: img.src,
                         width: img.naturalWidth,
                         height: img.naturalHeight
                     };
-
                 });
 
                 if (!imageData) {
-                    console.log(`[${crawlId}] ⚠ No image found in viewer → STOP`);
+                    logWarn(crawlId, `No image found in viewer — STOP`);
                     break;
                 }
 
                 if (images.some(i => i.url === imageData.url)) {
-                    console.log(`[${crawlId}] ⚠ Duplicate image detected → STOP`);
+                    logWarn(crawlId, `Duplicate image detected — STOP`);
                     break;
                 }
 
-                console.log(
-                    `[${crawlId}] ✅ Image found: ${imageData.url}`
-                );
-                console.log(
-                    `[${crawlId}] 📐 Size: ${imageData.width}x${imageData.height}`
-                );
+                logOk(crawlId, `Image found`, {
+                    size: `${imageData.width}x${imageData.height}`,
+                    url: imageData.url,
+                });
 
                 images.push(imageData);
                 newLastUrl = page.url();
 
-                console.log(`[${crawlId}] ⬅ Moving to previous image`);
+                log(crawlId, `⬅️ Moving to previous image`);
                 await page.keyboard.press('ArrowLeft');
                 await page.waitForTimeout(3000);
             }
 
-            console.log(
-                `[${crawlId}] 🎯 Crawl finished. Total images: ${images.length}`
-            );
-            console.log(
-                `[${crawlId}] ⏱ Duration: ${Date.now() - startTime}ms`
-            );
+            logOk(crawlId, `Crawl finished`, {
+                total: images.length,
+                totalMs: Date.now() - startTime,
+            });
+            log(crawlId, separator);
 
-            return {success: true, images: images, newLastUrl: newLastUrl};
+            return { success: true, images, newLastUrl };
 
         } catch (err) {
-
-            console.error(`[${crawlId}] ❌ Crawl error: ${err.message}`);
-            console.error(
-                `[${crawlId}] ⏱ Failed after ${Date.now() - startTime}ms`
-            );
+            logError(crawlId, `Crawl error`, err);
             throw err;
 
         } finally {
-
-            console.log(
-                `[${crawlId}] ⏱ Finished after ${Date.now() - startTime}ms`
-            );
-            console.log(`[${crawlId}] =============================\n`);
+            log(crawlId, `⏱️ Finished`, { totalMs: Date.now() - startTime });
+            log(crawlId, separator);
         }
     }
 }

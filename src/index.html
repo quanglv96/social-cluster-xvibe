@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Social Dashboard</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-base:    #060d1a;
+            --bg-surface: #0c1628;
+            --bg-panel:   #101e35;
+            --border:     #1a2d4a;
+            --border-hi:  #1e3a5f;
+            --text-pri:   #e2e8f0;
+            --text-sec:   #7a96b8;
+            --text-dim:   #3d5470;
+            --accent:     #3b82f6;
+            --accent-dim: #1d4070;
+            --green:      #22c55e;
+            --green-dim:  #14532d;
+            --amber:      #f59e0b;
+            --red:        #ef4444;
+            --mono:       'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
+        }
+
+        body {
+            font-family: var(--mono);
+            background: var(--bg-base);
+            color: var(--text-pri);
+            height: 100vh;
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        .shell {
+            display: grid;
+            grid-template-rows: 48px 44px 1fr 1fr;
+            grid-template-columns: 30% 1fr;
+            height: 100vh;
+            gap: 1px;
+            background: var(--border);
+        }
+
+        /* ── HEADER ── */
+        .header {
+            grid-column: 1 / -1;
+            background: var(--bg-surface);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border-hi);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: .04em;
+            color: var(--text-pri);
+        }
+
+        .brand-icon {
+            width: 28px; height: 28px;
+            background: var(--accent-dim);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px;
+        }
+
+        .header-meta {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 11px;
+            color: var(--text-sec);
+        }
+
+        #status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--red);
+        }
+
+        .dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+        /* ── CONTROL BAR ── */
+        .control {
+            grid-column: 1 / -1;
+            background: var(--bg-surface);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .btn {
+            padding: 5px 14px;
+            font-family: var(--mono);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            border: 1px solid;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background .15s, color .15s;
+        }
+
+        .btn-start  { background: var(--green-dim);  border-color: var(--green);  color: var(--green); }
+        .btn-start:hover  { background: var(--green);  color: #000; }
+        .btn-stop   { background: #1f0e0e; border-color: var(--red);   color: var(--red); }
+        .btn-stop:hover   { background: var(--red);   color: #000; }
+        .btn-restart { background: #1a1500; border-color: var(--amber); color: var(--amber); }
+        .btn-restart:hover { background: var(--amber); color: #000; }
+
+        .sep { width: 1px; height: 24px; background: var(--border-hi); margin: 0 4px; }
+
+        .url-input {
+            flex: 1;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-hi);
+            border-radius: 4px;
+            padding: 5px 10px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-pri);
+            outline: none;
+            max-width: 400px;
+        }
+
+        .url-input::placeholder { color: var(--text-dim); }
+        .url-input:focus { border-color: var(--accent); }
+
+        .btn-save {
+            padding: 5px 14px;
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            background: var(--accent-dim);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .btn-save:hover { background: var(--accent); color: #fff; }
+
+        /* ── PANELS ── */
+        .panel {
+            background: var(--bg-panel);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .1em;
+            color: var(--text-sec);
+            flex-shrink: 0;
+        }
+
+        .panel-header::before {
+            content: '';
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 14px;
+        }
+
+        .panel-body::-webkit-scrollbar { width: 4px; }
+        .panel-body::-webkit-scrollbar-track { background: transparent; }
+        .panel-body::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+        /* ── STATS ── */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .stat-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+
+        .stat-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: .1em;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-pri);
+            line-height: 1;
+        }
+
+        .stat-value.accent { color: var(--accent); }
+        .stat-value.green  { color: var(--green); }
+        .stat-value.red    { color: var(--red); }
+
+        /* ── QUEUE ── */
+        .queue-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 11px;
+        }
+
+        .queue-item:last-child { border-bottom: none; }
+
+        .q-badge {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: var(--accent-dim);
+            color: var(--accent);
+            border: 1px solid var(--accent-dim);
+            flex-shrink: 0;
+        }
+
+        /* ── LOG ── */
+        .log-panel {
+            grid-column: 2;
+            grid-row: 3 / 5;
+            background: var(--bg-base);
+            border-left: 1px solid var(--border-hi);
+        }
+
+        /* log-scroll là container scroll thực sự */
+        #log-scroll {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        #log-scroll::-webkit-scrollbar { width: 4px; }
+        #log-scroll::-webkit-scrollbar-track { background: transparent; }
+        #log-scroll::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+        #log {
+            font-size: 11px;
+            line-height: 1.7;
+            padding: 10px 14px;
+            display: flex;
+            flex-direction: column; /* asc: entry mới append xuống dưới */
+        }
+
+        .log-line {
+            display: flex;
+            gap: 10px;
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(26,45,74,0.4);
+        }
+
+        .log-line:last-child { border-bottom: none; }
+
+        .log-ts {
+            color: var(--text-dim);
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        .log-msg { color: var(--text-sec); word-break: break-all; }
+        .log-info  .log-msg { color: var(--accent); }
+        .log-warn  .log-msg { color: var(--amber);  }
+        .log-error .log-msg { color: var(--red);    }
+        .log-ok    .log-msg { color: var(--green);  }
+
+        .log-icon {
+            flex-shrink: 0;
+            width: 14px;
+            text-align: center;
+            font-size: 10px;
+            opacity: .85;
+            user-select: none;
+        }
+
+        .log-info  .log-icon { color: var(--accent); }
+        .log-warn  .log-icon { color: var(--amber);  }
+        .log-error .log-icon { color: var(--red);    }
+        .log-ok    .log-icon { color: var(--green);  }
+
+        /* ── QUEUE STATUS BADGES ── */
+        .q-empty {
+            color: var(--text-dim);
+            font-size: 11px;
+            text-align: center;
+            padding: 24px 0;
+            letter-spacing: .06em;
+        }
+
+        .q-status {
+            min-width: 96px;
+            text-align: center;
+            font-size: 9px;
+        }
+
+        .q-pending {
+            background: #1a1500;
+            border-color: var(--amber);
+            color: var(--amber);
+        }
+
+        .q-processing {
+            background: var(--accent-dim);
+            border-color: var(--accent);
+            color: var(--accent);
+            animation: pulse-glow 1.2s ease-in-out infinite;
+        }
+
+        .q-success {
+            background: var(--green-dim);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .q-error {
+            background: #1f0e0e;
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: none; }
+            50%       { box-shadow: 0 0 8px var(--accent); }
+        }
+
+        .q-action {
+            color: var(--text-pri);
+            font-size: 11px;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .q-id {
+            color: var(--text-dim);
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+            flex-shrink: 0;
+        }
+
+        .q-dur {
+            color: var(--text-sec);
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+            min-width: 44px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="shell">
+
+    <!-- HEADER -->
+    <header class="header">
+        <div class="header-brand">
+            <div class="brand-icon">⬡</div>
+            FB Crawler
+        </div>
+        <div class="header-meta">
+            <span>v2.4.1</span>
+            <div id="status"><span class="dot" id="dot"></span><span id="status-text">STOPPED</span></div>
+        </div>
+    </header>
+
+    <!-- CONTROL -->
+    <div class="control">
+        <button class="btn btn-start"   onclick="start()">▶ Start</button>
+        <button class="btn btn-stop"    onclick="stop()">■ Stop</button>
+        <button class="btn btn-restart" onclick="restart()">↺ Restart</button>
+        <div class="sep"></div>
+        <input id="hostUrl" class="url-input" placeholder="https://facebook.com/..." />
+        <button class="btn-save" onclick="save()">Save Config</button>
+    </div>
+
+    <!-- STATS -->
+    <div class="panel" style="grid-column:1;grid-row:3;">
+        <div class="panel-header">System Metrics</div>
+        <div class="panel-body">
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-label">CPU</div>
+                    <div class="stat-value accent" id="cpu">0%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Memory</div>
+                    <div class="stat-value accent" id="memory">0 MB</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Active Req</div>
+                    <div class="stat-value green" id="req">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Error</div>
+                    <div class="stat-value red" id="error">0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QUEUE -->
+    <div class="panel" style="grid-column:1;grid-row:4;">
+        <div class="panel-header">Task Queue</div>
+        <div class="panel-body">
+            <div id="queue"></div>
+        </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="panel log-panel">
+        <div class="panel-header">Live Log</div>
+        <div id="log-scroll">
+            <div id="log"></div>
+        </div>
+    </div>
+
+</div>
+
+<script src="./renderer.js"></script>
+<script>
+    (function () {
+        var logEl  = document.getElementById('log');
+        var scroll = document.getElementById('log-scroll');
+
+        function pinBottom() {
+            scroll.scrollTop = scroll.scrollHeight;
+        }
+
+        // scroll ke cuoi ngay sau khi renderer.js load xong
+        requestAnimationFrame(pinBottom);
+
+        // theo doi moi node moi duoc append vao #log
+        new MutationObserver(pinBottom).observe(logEl, {
+            childList:     true,
+            subtree:       true,
+            characterData: true
+        });
+    })();
+</script>
+</body>
+</html>

@@ -1,6 +1,47 @@
 import {BrowserManager} from '../browser/BrowserManager.js';
 import {XvibeNavigator} from "../social/XvibeNavigator.js";
-import {config} from "../../config/config.js";
+import {config, runtimeConfig} from "../../config/config.js";
+
+// =========================
+// Log Utils
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(module, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${module}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
+}
+
+function log(module, message, fields = {}) {
+    const msg = formatMsg(module, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(module, message, fields = {}) {
+    const msg = formatMsg(module, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(module, message, fields = {}) {
+    const msg = formatMsg(module, `❌ ${message}`, fields);
+    sendToRenderer('error', msg);
+}
+
+function logOk(module, message, fields = {}) {
+    const msg = formatMsg(module, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+// SessionManager
+// =========================
 
 export class SessionManager {
 
@@ -8,29 +49,26 @@ export class SessionManager {
     static rootPage = null;
     static createdAt = null;
     static lifeHours = null;
-    static initializing = null; // prevent race condition
+    static initializing = null;
 
     // =========================
     // PUBLIC
     // =========================
 
-
     static async forceLogout(reason = 'unknown') {
         const start = Date.now();
-        console.log(`[${new Date().toISOString()}] [FORCE_LOGOUT] START reason=${reason}`);
+        log('FORCE_LOGOUT', '🚀 started', { reason });
 
         try {
-            // 1. stop navigator trước
             if (this.navigator) {
                 try {
                     await this.navigator.stop();
                 } catch (e) {
-                    console.warn('[FORCE_LOGOUT] navigator stop error:', e.message);
+                    logWarn('FORCE_LOGOUT', 'navigator stop error', { error: e.message });
                 }
                 this.navigator = null;
             }
 
-            // 2. logout qua Facebook (best effort)
             if (this.context) {
                 const pages = this.context.pages();
 
@@ -41,68 +79,58 @@ export class SessionManager {
                             timeout: 15000
                         });
 
-                        // click avatar
                         await page.click(
                             '[aria-label="Trang cá nhân của bạn"], [aria-label="Your profile"], [aria-label="Account"]'
                         );
 
-                        // click logout + wait navigation
                         await Promise.all([
-                            page.waitForNavigation({waitUntil: 'load', timeout: 10000}),
+                            page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
                             page.click('text=/Đăng xuất|Log Out/i')
                         ]);
 
-                        // verify
                         if (!page.url().includes('login')) {
                             await page.goto('https://www.facebook.com/logout.php');
                         }
 
-                        // clear storage
                         await page.evaluate(async () => {
                             localStorage.clear();
                             sessionStorage.clear();
                         });
 
                     } catch (err) {
-                        console.warn('[FORCE_LOGOUT] fallback...', err.message);
-
+                        logWarn('FORCE_LOGOUT', 'page logout failed, using fallback', { error: err.message });
                         await page.goto('https://www.facebook.com/logout.php');
                     }
                 }
 
-                // 3. clear cookies (extra safety)
                 try {
                     await this.context.clearCookies();
                 } catch (e) {
-                    console.warn('[FORCE_LOGOUT] clearCookies error:', e.message);
+                    logWarn('FORCE_LOGOUT', 'clearCookies error', { error: e.message });
                 }
 
-                // 4. đóng context (quan trọng nhất)
                 try {
                     await this.context.close();
                 } catch (e) {
-                    console.warn('[FORCE_LOGOUT] close context error:', e.message);
+                    logWarn('FORCE_LOGOUT', 'close context error', { error: e.message });
                 }
             }
 
-            // 5. reset toàn bộ state
             this.context = null;
             this.rootPage = null;
             this.createdAt = null;
             this.lifeHours = null;
             this.hasEvent = false;
 
-            console.log(`[FORCE_LOGOUT] DONE duration=${Date.now() - start}ms`);
+            logOk('FORCE_LOGOUT', 'done', { ms: Date.now() - start });
 
         } catch (err) {
-            console.error(`[FORCE_LOGOUT] ERROR ${err.message}`);
+            logError('FORCE_LOGOUT', 'failed', { error: err.message });
             throw err;
         }
     }
 
-
     static async getSession() {
-
         if (!this.context || await this.#isExpired()) {
             await this.#ensureInit();
         }
@@ -119,28 +147,20 @@ export class SessionManager {
     }
 
     static async #gotoRoot() {
-        await this.rootPage.goto(`${config.rootUrl}`, {
+        await this.rootPage.goto(`${runtimeConfig.rootUrl}`, {
             waitUntil: 'domcontentloaded'
         });
     }
 
-    /**
-     * Tạo page cho event (post, crawl, ...)
-     * Page lifecycle sẽ được caller quản lý
-     */
     static async createEventPage() {
-        const {context} = await this.getSession();
+        const { context } = await this.getSession();
         return await context.newPage();
     }
 
     static hasEvent = false;
     static navigator = null;
 
-    /**
-     * Đóng event page và restore root
-     */
     static async closeEventPage(page) {
-
         if (!page) return;
 
         try {
@@ -148,22 +168,29 @@ export class SessionManager {
                 await page.close();
             }
         } catch (e) {
-            console.warn('[SessionManager] Cannot close event page:', e.message);
+            logWarn('SESSION', 'cannot close event page', { error: e.message });
         }
 
-        await this.#restoreRoot();
+        await this.restoreRootOnly();
+    }
+
+    static async restoreRootOnly() {
+        try {
+            await this.#restoreRoot();
+        } catch (e) {
+            logWarn('SESSION', 'restoreRootOnly error', { error: e.message });
+        }
 
         this.hasEvent = false;
 
         if (!this.navigator && this.rootPage && !this.rootPage.isClosed()) {
-
             this.navigator = new XvibeNavigator(
                 this.rootPage,
                 async () => this.hasEvent
             );
 
             this.navigator.start().catch(err =>
-                console.warn('[Navigator Error]', err.message)
+                logWarn('NAVIGATOR', 'start error', { error: err.message })
             );
         }
     }
@@ -172,11 +199,7 @@ export class SessionManager {
     // PRIVATE
     // =========================
 
-    /**
-     * Đảm bảo chỉ init 1 lần khi concurrent call
-     */
     static async #ensureInit() {
-
         if (this.initializing) {
             return this.initializing;
         }
@@ -187,31 +210,27 @@ export class SessionManager {
     }
 
     static async #initSession() {
+        log('SESSION', '🚀 initializing new session');
 
-        console.log('[SessionManager] Initializing new session...');
-
-        // Close old context if exists
         if (this.context) {
             try {
                 await this.context.close();
             } catch (e) {
-                console.warn('[SessionManager] Error closing old context:', e.message);
+                logWarn('SESSION', 'error closing old context', { error: e.message });
             }
         }
 
         const browser = await BrowserManager.getBrowser();
 
         this.context = await browser.newContext({
-            viewport: {width: 1366, height: 768},
+            viewport: { width: 1366, height: 768 },
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             locale: 'en-US',
             timezoneId: 'Asia/Ho_Chi_Minh'
         });
 
         await this.context.addInitScript(() => {
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => false
-            });
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
         });
 
         this.rootPage = await this.context.newPage();
@@ -220,55 +239,44 @@ export class SessionManager {
         this.createdAt = Date.now();
         this.lifeHours = this.#random(5, 24);
 
-        console.log(
-            `[SessionManager] Session started. Lifetime: ${this.lifeHours}h`
-        );
+        logOk('SESSION', 'initialized', { lifeHours: this.lifeHours });
     }
 
     static async #isExpired() {
-
         if (!this.createdAt) return true;
 
         const now = Date.now();
         const maxLife = this.lifeHours * 60 * 60 * 1000;
-
         const expired = now - this.createdAt > maxLife;
 
         if (expired) {
-            console.log('[SessionManager] Session expired. Recreating...');
+            log('SESSION', '⏰ session expired, recreating');
         }
 
         return expired;
     }
 
     static async #restoreRoot() {
-
         if (!this.rootPage) return;
         if (this.rootPage.isClosed()) return;
 
         try {
             await this.rootPage.bringToFront();
 
-            // 🔥 Nếu không ở root domain → goto lại
             if (!this.rootPage.url().includes(`${config.rootUrl}`)) {
                 await this.#gotoRoot();
             }
 
-            // 🔥 Đảm bảo đang ở root xong mới tiếp tục
             await this.rootPage.waitForTimeout(1000);
 
-            // 🔥 Clear sessionStorage
             await this.rootPage.evaluate(() => {
                 sessionStorage.clear();
             });
 
-            // 🔥 Reload lại page
-            await this.rootPage.reload({
-                waitUntil: 'domcontentloaded'
-            });
+            await this.rootPage.reload({ waitUntil: 'domcontentloaded' });
 
         } catch (e) {
-            console.warn('[SessionManager] Cannot restore root:', e.message);
+            logWarn('SESSION', 'cannot restore root', { error: e.message });
         }
     }
 
@@ -276,56 +284,53 @@ export class SessionManager {
         return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
-    static status = 'running'; // running | sleeping
+    static status = 'running';
 
     static async sleep() {
-
-        console.log('[Bot] Going to sleep');
+        log('BOT', '😴 going to sleep');
 
         if (!this.context) return;
 
         try {
             await this.context.close();
         } catch (e) {
-            console.warn('Sleep error:', e.message);
+            logWarn('BOT', 'sleep close error', { error: e.message });
         }
 
         this.context = null;
         this.rootPage = null;
         this.navigator = null;
         this.hasEvent = false;
+
+        logOk('BOT', 'sleeping');
     }
 
     static async wakeup() {
-
         if (this.context) {
-            console.log('[Bot] Already running');
+            logWarn('BOT', 'wakeup called but already running');
             return;
         }
 
-        console.log('[Bot] Waking up');
+        log('BOT', '⏰ waking up');
 
         await this.#ensureInit();
 
-        // đảm bảo root tồn tại
         if (!this.rootPage || this.rootPage.isClosed()) {
             this.rootPage = await this.context.newPage();
             await this.#gotoRoot();
         }
 
-        // reset event state
         this.hasEvent = false;
 
-        // start navigator
         this.navigator = new XvibeNavigator(
             this.rootPage,
             async () => this.hasEvent
         );
 
         this.navigator.start().catch(err =>
-            console.warn('[Navigator Error]', err.message)
+            logWarn('NAVIGATOR', 'start error', { error: err.message })
         );
 
-        console.log('[Bot] Navigator started');
+        logOk('BOT', 'navigator started');
     }
 }

@@ -1,6 +1,53 @@
+// =========================
+// Log Utils
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(requestId, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
+}
+
+function log(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(requestId, message, err) {
+    const msg = formatMsg(requestId, `❌ ${message}`, {
+        error: err?.message || err
+    });
+    sendToRenderer('error', msg);
+}
+
+function logOk(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+// Class
+// =========================
+
+const TAG = 'DELAY';
+
 export class DelayService {
 
     constructor(options = {}) {
+
+        this.requestId = `${TAG}_${Date.now()}`;
 
         this.config = {
             actionMin: 800,
@@ -15,7 +62,7 @@ export class DelayService {
             betweenGroupMin: 4000,
             betweenGroupMax: 9000,
 
-            scrollProbability: 0.35, // xác suất mỗi chunk có scroll
+            scrollProbability: 0.35,
 
             scrollStepMin: 80,
             scrollStepMax: 300,
@@ -41,7 +88,10 @@ export class DelayService {
             this.config.actionMax
         );
 
-        console.log(`[DelayService] Action delay ${label}: ${total}ms`);
+        log(this.requestId, 'Action delay', {
+            label,
+            duration: `${total}ms`
+        });
 
         await this.#humanizedWait(total, page);
     }
@@ -52,7 +102,10 @@ export class DelayService {
             this.config.navigationMax
         );
 
-        console.log(`[DelayService] Navigation delay ${label}: ${total}ms`);
+        log(this.requestId, 'Navigation delay', {
+            label,
+            duration: `${total}ms`
+        });
 
         await this.#humanizedWait(total, page);
     }
@@ -63,7 +116,10 @@ export class DelayService {
             this.config.uploadMax
         );
 
-        console.log(`[DelayService] Upload delay ${label}: ${total}ms`);
+        log(this.requestId, 'Upload delay', {
+            label,
+            duration: `${total}ms`
+        });
 
         await this.sleep(total);
     }
@@ -74,7 +130,10 @@ export class DelayService {
             this.config.betweenGroupMax
         );
 
-        console.log(`[DelayService] Between group delay ${label}: ${total}ms`);
+        log(this.requestId, 'Between group delay', {
+            label,
+            duration: `${total}ms`
+        });
 
         await this.sleep(total);
     }
@@ -86,6 +145,8 @@ export class DelayService {
 
         let elapsed = 0;
 
+        // 🔇 KHÔNG log mỗi chunk để tránh spam
+
         while (elapsed < totalTime) {
 
             const chunk = this.random(
@@ -96,7 +157,6 @@ export class DelayService {
             await this.sleep(chunk);
             elapsed += chunk;
 
-            // Nếu có page thì mới scroll
             if (page && Math.random() < this.config.scrollProbability) {
 
                 const distance = this.random(
@@ -104,14 +164,25 @@ export class DelayService {
                     this.config.scrollStepMax
                 );
 
-                await page.mouse.wheel(0, distance);
+                try {
+                    await page.mouse.wheel(0, distance);
 
-                // 25% khả năng scroll ngược nhẹ
-                if (Math.random() < 0.25) {
-                    const reverse = this.random(40, 120);
-                    await page.mouse.wheel(0, -reverse);
+                    // 25% khả năng scroll ngược nhẹ
+                    if (Math.random() < 0.25) {
+                        const reverse = this.random(40, 120);
+                        await page.mouse.wheel(0, -reverse);
+                    }
+
+                } catch (err) {
+                    logWarn(this.requestId, 'Scroll failed', {
+                        error: err?.message
+                    });
                 }
             }
         }
+
+        logOk(this.requestId, 'Delay completed', {
+            total: `${totalTime}ms`
+        });
     }
 }

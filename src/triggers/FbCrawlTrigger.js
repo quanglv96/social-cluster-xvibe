@@ -1,46 +1,80 @@
 import { ExcelService } from '../services/ExcelService.js';
 import { ApiService } from '../services/ApiService.js';
 
+// =========================
+// Log Utils
+// =========================
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function formatMsg(requestId, message, fields = {}) {
+    const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
+    return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
+}
+
+function sendToRenderer(type, msg) {
+    process.send?.({ type: 'LOG', data: { type, msg } });
+}
+
+function log(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, message, fields);
+    sendToRenderer('info', msg);
+}
+
+function logWarn(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
+    sendToRenderer('warn', msg);
+}
+
+function logError(requestId, message, err) {
+    const msg = formatMsg(requestId, `❌ ${message}`, { error: err?.message || err });
+    sendToRenderer('error', msg);
+}
+
+function logOk(requestId, message, fields = {}) {
+    const msg = formatMsg(requestId, `✅ ${message}`, fields);
+    sendToRenderer('ok', msg);
+}
+
+// =========================
+// Trigger
+// =========================
+
 export class FbCrawlTrigger {
     static useEventPage = true;
+
     constructor(social) {
         this.social = social;
     }
 
     async execute(dto, page) {
-
         if (!page) {
             throw new Error("FbCrawlTrigger requires an event page");
         }
 
-        const {id, source, last_image, type} = dto;
+        const { id, source, last_image, type } = dto;
         const jobId = id || `JOB_${Date.now()}`;
         const startTime = Date.now();
 
-        console.log(`[${jobId}] =============================`);
-        console.log(`[${jobId}] 🚀 START CRAWL`);
-        console.log(`[${jobId}] Source: ${source}`);
-        console.log(`[${jobId}] Time: ${new Date().toISOString()}`);
+        const separator = '='.repeat(60);
+        log(jobId, separator);
+        log(jobId, `🚀 START CRAWL`, { source, time: nowIso() });
 
         try {
-
             // =====================
             // 1. CRAWL
             // =====================
-            console.log(`[${jobId}] 🔍 Crawling images...`);
+            log(jobId, `🔍 Crawling images...`);
 
-            const {success, images, newLastUrl } =
-                await this.social.fbCrawler(dto, page);   // ✅ FIXED
+            const { success, images, newLastUrl } =
+                await this.social.fbCrawler(dto, page);
 
-            console.log(
-                `[${jobId}] ✅ Crawl done. Found ${images.length} images`
-            );
+            logOk(jobId, `Crawl done`, { images: images.length });
 
             if (!images.length) {
-
-                console.log(`[${jobId}] ⚠ No new images`);
-                console.log(`[${jobId}] ⏱ Total time: ${Date.now() - startTime}ms`);
-
+                logWarn(jobId, `No new images`, { totalMs: Date.now() - startTime });
                 return {
                     images: [],
                     message: 'No new images'
@@ -50,54 +84,41 @@ export class FbCrawlTrigger {
             // =====================
             // 2. BUILD EXCEL
             // =====================
-            console.log(`[${jobId}] 📄 Building Excel file...`);
+            log(jobId, `📄 Building Excel file...`);
 
-            const buffer =
-                await ExcelService.buildExcel(images, source);
+            const buffer = await ExcelService.buildExcel(images, source);
 
-            console.log(`[${jobId}] ✅ Excel created success`);
+            logOk(jobId, `Excel created`);
 
             // =====================
             // 3. UPLOAD FILE
             // =====================
-            console.log(`[${jobId}] ☁ Uploading Excel to backend...`);
+            log(jobId, `☁️ Uploading Excel to backend...`);
 
             await ApiService.uploadExcel(buffer);
 
-            console.log(`[${jobId}] ✅ Upload success`);
+            logOk(jobId, `Upload success`);
 
             // =====================
             // 4. UPDATE CHECKPOINT
             // =====================
-            console.log(`[${jobId}] 🔄 Updating checkpoint...`);
+            log(jobId, `🔄 Updating checkpoint...`);
 
             if (newLastUrl && newLastUrl !== last_image) {
                 await ApiService.updatePageCheckpoint(id, newLastUrl);
-                console.log(`[${jobId}] ✅ Checkpoint updated`);
-
+                logOk(jobId, `Checkpoint updated`, { newLastUrl });
             } else {
-                console.log(`[${jobId}] ⏭ Checkpoint unchanged`);
+                log(jobId, `⏭ Checkpoint unchanged`);
             }
-            console.log(`[${jobId}] ✅ Checkpoint updated`);
 
-            console.log(
-                `[${jobId}] 🎉 DONE - Total time: ${Date.now() - startTime}ms`
-            );
-            console.log(`[${jobId}] =============================`);
+            logOk(jobId, `🎉 DONE`, { totalMs: Date.now() - startTime });
+            log(jobId, separator);
 
-            return {
-                success,
-                images,
-                newLastUrl
-            };
+            return { success, images, newLastUrl };
 
         } catch (error) {
-
-            console.error(`[${jobId}] ❌ ERROR:`, error.message);
-            console.error(
-                `[${jobId}] ⏱ Failed after ${Date.now() - startTime}ms`
-            );
-
+            logError(jobId, `CRAWL FAILED`, error);
+            log(jobId, `⏱ Failed after ${Date.now() - startTime}ms`);
             throw error;
         }
     }
