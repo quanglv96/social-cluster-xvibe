@@ -137,13 +137,21 @@ const pendingQueue = []; // chỉ chứa id đang chờ xử lý
 let processing = false;
 
 function buildQueueItems() {
-    return [...taskRegistry.values()].map(t => ({
-        id:         t.id,
-        action:     t.action,
-        status:     t.status,
-        enqueuedAt: t.enqueuedAt,
-        duration:   (t.endedAt ?? Date.now()) - t.enqueuedAt,
-    }));
+    return [...taskRegistry.values()].map(t => {
+        let duration = null;
+        if (t.status === 'PROCESSING' && t.processingStartAt) {
+            duration = Date.now() - t.processingStartAt;
+        } else if ((t.status === 'SUCCESS' || t.status === 'ERROR') && t.processingStartAt) {
+            duration = t.endedAt - t.processingStartAt;
+        }
+        return {
+            id:         t.id,
+            action:     t.action,
+            status:     t.status,
+            enqueuedAt: t.enqueuedAt,
+            duration,
+        };
+    });
 }
 
 // Export để app.js đọc trong stats interval
@@ -194,6 +202,7 @@ async function processQueue() {
             // → PROCESSING: yield trước để renderer kịp render PENDING
             await yieldToUI();
             entry.status = 'PROCESSING';
+            entry.processingStartAt = Date.now();
             sendQueueToUI();
             await yieldToUI(); // yield thêm lần nữa để PROCESSING flush trước khi task bắt đầu
 

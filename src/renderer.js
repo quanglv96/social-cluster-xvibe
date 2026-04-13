@@ -107,9 +107,11 @@ ipcRenderer.on("queue", (_, items) => {
 
     items.forEach(item => {
         const meta = Q_META[item.status] ?? Q_META.PENDING;
-        const dur  = item.duration < 1000
-            ? item.duration + 'ms'
-            : (item.duration / 1000).toFixed(1) + 's';
+        const dur  = item.duration === null
+            ? '-'
+            : item.duration < 1000
+                ? item.duration + 'ms'
+                : (item.duration / 1000).toFixed(1) + 's';
 
         let row = document.getElementById(`qi-${item.id}`);
 
