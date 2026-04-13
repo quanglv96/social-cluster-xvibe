@@ -70,6 +70,7 @@ export const config = {
     maxImages: toNumber(process.env.MAX_IMAGES, builtinConfig.maxImages ?? 100),
     defaultWait: toNumber(process.env.DEFAULT_WAIT, builtinConfig.defaultWait ?? 3000),
     facebookProfileDir: process.env.FB_PROFILES_DIR || './fb_profiles', // ← thêm fallback
+    twitterProfileDir: process.env.TW_PROFILES_DIR || './twitter-profiles', // ← thêm fallback
 };
 
 // =============================

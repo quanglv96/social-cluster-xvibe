@@ -9,6 +9,7 @@ import {runtimeConfig} from "../config/config.js";
 import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
 import {TwCrawlTrigger} from "../triggers/TwCrawlTrigger.js";
 import {FacebookContextPool} from "../core/auth/FacebookContextPool.js";
+import {TwitterContextPool} from "../core/auth/TwitterContextPool.js";
 
 const router = express.Router();
 
@@ -325,7 +326,8 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
     ACTIVE_REQUESTS++;
     log(requestTrace, `🚀 REQUEST START`, {action: actionName, active: ACTIVE_REQUESTS, pid: process.pid});
 
-    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB'].includes(dto.type);
+    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE'].includes(dto.type);
+    const isTwitter = ['CRAWLS_TWITTER', 'POST_TWITTER'].includes(dto.type);
 
     try {
         session = await measure(requestTrace, 'getSession', async () => {
@@ -347,6 +349,8 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             page = await measure(requestTrace, 'createEventPage', async () => {
                 if (isFacebook) {
                     page = await FacebookContextPool.createEventPage(dto);
+                } else if (isTwitter) {
+                    page = await TwitterContextPool.createEventPage(dto);
                 } else {
                     page = await SessionManager.createEventPage();
                 }
@@ -354,14 +358,17 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             });
         }
 
+        // ── ContextFactory ────────────────────────────────────────────────
         resultFactory = await measure(requestTrace, 'ContextFactory.create', async () => {
             return await ContextFactory.create(dto);
         });
 
+        // ── Trigger ───────────────────────────────────────────────────────
         trigger = await measure(requestTrace, `new ${TriggerClass.name}`, async () => {
             return new TriggerClass(resultFactory.social);
         });
 
+        // Twitter: page = undefined → TwitterSocial.post/twCrawler tự gọi createEventPage từ pool
         const result = await measure(requestTrace, `${TriggerClass.name}.execute`, async () => {
             return await trigger.execute(dto, page);
         });
@@ -387,7 +394,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
             if (page) {
                 await measure(requestTrace, 'closeEventPage[catch]', async () => {
-                    if (!isFacebook) {
+                    if (!isFacebook || !isTwitter) {
                         await SessionManager.closeEventPage(page);
                     } else {
                         await SessionManager.restoreRootOnly();
@@ -421,7 +428,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
     } finally {
         if (page) {
             await measure(requestTrace, 'closeEventPage[finally]', async () => {
-                if (!isFacebook) {
+                if (!isFacebook && !isTwitter) {
                     await SessionManager.closeEventPage(page);
                 } else {
                     await SessionManager.restoreRootOnly();

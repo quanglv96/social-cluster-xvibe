@@ -9,7 +9,7 @@ import {runtimeConfig} from "./config/config.js";
 import {FacebookContextPool} from "./core/auth/FacebookContextPool.js";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 
 const MAX_ACTIVE_REQUESTS = Number(process.env.MAX_ACTIVE_REQUESTS || 20);
 const MAX_OVERLOAD_LOGS = 20;

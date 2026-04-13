@@ -5,9 +5,7 @@ import { ApiService } from '../services/ApiService.js';
 // Log Utils
 // =========================
 
-function nowIso() {
-    return new Date().toISOString();
-}
+function nowIso() { return new Date().toISOString(); }
 
 function formatMsg(requestId, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
@@ -19,25 +17,19 @@ function sendToRenderer(type, msg) {
 }
 
 function log(requestId, message, fields = {}) {
-    const msg = formatMsg(requestId, message, fields);
-    sendToRenderer('info', msg);
+    sendToRenderer('info', formatMsg(requestId, message, fields));
 }
 
 function logWarn(requestId, message, fields = {}) {
-    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
-    sendToRenderer('warn', msg);
+    sendToRenderer('warn', formatMsg(requestId, `⚠️ ${message}`, fields));
 }
 
 function logError(requestId, message, err) {
-    const msg = formatMsg(requestId, `❌ ${message}`, {
-        error: err?.message || err
-    });
-    sendToRenderer('error', msg);
+    sendToRenderer('error', formatMsg(requestId, `❌ ${message}`, { error: err?.message || err }));
 }
 
 function logOk(requestId, message, fields = {}) {
-    const msg = formatMsg(requestId, `✅ ${message}`, fields);
-    sendToRenderer('ok', msg);
+    sendToRenderer('ok', formatMsg(requestId, `✅ ${message}`, fields));
 }
 
 // =========================
@@ -48,97 +40,57 @@ const TAG = 'TW_CRAWL';
 
 export class TwCrawlTrigger {
 
-    static useEventPage = true;
+    static useEventPage = false; // ← Twitter pool tự quản lý page
 
     constructor(social) {
         this.social = social;
     }
 
-    async execute(dto, page) {
-
-        if (!page) {
-            throw new Error("TwCrawlTrigger requires an event page");
-        }
-
+    async execute(dto) {
         const { id, source, last_image, type } = dto;
-
         const requestId = `${TAG}_${id || Date.now()}`;
         const startTime = Date.now();
 
-        log(requestId, 'START TWITTER CRAWL', {
-            source,
-            type
-        });
+        log(requestId, 'START TWITTER CRAWL', { source, type });
 
         try {
-
             // =====================
-            // 1. OPEN MEDIA PAGE
+            // 1. CRAWL
+            // goto + page đều nằm trong TwitterSocial.twCrawler
             // =====================
-            log(requestId, 'Opening media page', { url: `${source}/media` });
-
-            await page.goto(source + '/media', {
-                waitUntil: 'domcontentloaded',
-                timeout: 60000
-            });
-
-            await page.waitForTimeout(3000);
-
-            // =====================
-            // 2. CRAWL
-            // =====================
-            log(requestId, 'Crawling images');
+            log(requestId, 'Crawling images', { url: `${source}/media` });
 
             const { success, images, newLastUrl } =
-                await this.social.twCrawler(dto, page);
+                await this.social.twCrawler(dto);
 
-            logOk(requestId, 'Crawl done', {
-                total: images.length
-            });
+            logOk(requestId, 'Crawl done', { total: images.length });
 
             if (!images.length) {
-
                 logWarn(requestId, 'No new images');
-
-                log(requestId, 'Finished crawl', {
-                    duration: `${Date.now() - startTime}ms`
-                });
-
-                return {
-                    images: [],
-                    message: 'No new images'
-                };
+                return { images: [], message: 'No new images' };
             }
 
             // =====================
-            // 3. BUILD EXCEL
+            // 2. BUILD EXCEL
             // =====================
             log(requestId, 'Building Excel file');
-
-            const buffer =
-                await ExcelService.buildExcel(images, source);
-
+            const buffer = await ExcelService.buildExcel(images, source);
             logOk(requestId, 'Excel created');
 
             // =====================
-            // 4. UPLOAD FILE
+            // 3. UPLOAD FILE
             // =====================
             log(requestId, 'Uploading Excel to backend');
-
             await ApiService.uploadExcel(buffer);
-
             logOk(requestId, 'Upload success');
 
             // =====================
-            // 5. UPDATE CHECKPOINT
+            // 4. UPDATE CHECKPOINT
             // =====================
             log(requestId, 'Updating checkpoint');
-
             if (newLastUrl && newLastUrl !== last_image) {
                 await ApiService.updatePageCheckpoint(id, newLastUrl);
-
                 logOk(requestId, 'Checkpoint updated');
-
             } else {
                 logWarn(requestId, 'Checkpoint unchanged');
             }
@@ -148,20 +100,10 @@ export class TwCrawlTrigger {
                 total: images.length
             });
 
-            return {
-                success,
-                images,
-                newLastUrl
-            };
+            return { success, images, newLastUrl };
 
         } catch (error) {
-
             logError(requestId, 'TWITTER CRAWL FAILED', error);
-
-            logWarn(requestId, 'Execution finished with error', {
-                duration: `${Date.now() - startTime}ms`
-            });
-
             throw error;
         }
     }
