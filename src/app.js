@@ -6,6 +6,7 @@ import {AppRegistryService} from "./AppRegistryService.js";
 import {TunnelService} from "./TunnelService.js";
 import os from 'os';
 import {runtimeConfig} from "./config/config.js";
+import {FacebookContextPool} from "./core/auth/FacebookContextPool.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -256,7 +257,8 @@ async function gracefulExit(signal) {
         await TunnelService.stop();
         log('TUNNEL', 'stopped');
 
-        await BrowserManager.closeAll();
+        await FacebookContextPool.closeAll(); // 🔥 đóng pool trước
+        await BrowserManager.closeAll();      // 🔥 sau đó đóng browser
         log('BROWSER', 'closed');
     } catch (err) {
         logError('APP', `cleanup error on ${signal}`, { error: err.message });
@@ -325,6 +327,11 @@ process.on('message', async (msg) => {
             await gracefulExit('UI_RESTART');
             process.exit(0);
         }
+    }
+
+    if (msg.type === 'SET_HEADLESS') {
+        log('CONFIG', '🖥️ headless changed', { hide: msg.payload });
+        await BrowserManager.setVisibility(msg.payload); // payload=true → ẩn, false → hiện
     }
 });
 

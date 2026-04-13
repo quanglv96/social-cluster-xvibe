@@ -9,7 +9,6 @@ import {runtimeConfig} from "../config/config.js";
 import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
 import {TwCrawlTrigger} from "../triggers/TwCrawlTrigger.js";
 import {FacebookContextPool} from "../core/auth/FacebookContextPool.js";
-import {reportError} from '../app.js';
 
 const router = express.Router();
 

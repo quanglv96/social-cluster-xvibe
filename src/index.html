@@ -388,7 +388,38 @@
             text-align: right;
             flex-shrink: 0;
         }
+
+        .btn-headless {
+            width: 140px;              /* fix cứng chiều ngang */
+            text-align: center;        /* căn giữa text */
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;   /* center nội dung */
+        }
+        .btn-headless-on {
+            background: var(--green-dim);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .btn-headless-on:hover {
+            background: var(--green);
+            color: #000;
+        }
+
+        .btn-headless-off {
+            background: #1f0e0e;
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        .btn-headless-off:hover {
+            background: var(--red);
+            color: #000;
+        }
     </style>
+
+
 </head>
 <body>
 
@@ -411,6 +442,13 @@
         <button class="btn btn-start"   onclick="start()">▶ Start</button>
         <button class="btn btn-stop"    onclick="stop()">■ Stop</button>
         <button class="btn btn-restart" onclick="restart()">↺ Restart</button>
+        <div class="sep"></div>
+
+        <button id="btn-headless"
+                class="btn btn-headless btn-headless-off"
+                onclick="toggleHeadless()">
+            Headless: <span id="headless-state">OFF</span>
+        </button>
         <div class="sep"></div>
         <input id="hostUrl" class="url-input" placeholder="https://facebook.com/..." />
         <button class="btn-save" onclick="save()">Save Config</button>

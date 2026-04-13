@@ -146,3 +146,40 @@ async function loadVersion() {
 }
 
 loadVersion();
+
+
+
+// ===========UPDATE HEADLESS READTIME=============
+// HEADLESS=true  = browser đang ẩn  = button "HIDDEN" (đỏ)
+// HEADLESS=false = browser đang hiện = button "VISIBLE" (xanh)
+let HEADLESS = true; // sync với BrowserManager default
+
+async function initHeadless() {
+    HEADLESS = await ipcRenderer.invoke('get-headless');
+    updateHeadlessUI();
+}
+
+window.toggleHeadless = function () {
+    HEADLESS = !HEADLESS;
+    ipcRenderer.send('set-headless', HEADLESS);
+    updateHeadlessUI();
+};
+
+function updateHeadlessUI() {
+    const btn   = document.getElementById('btn-headless');
+    const state = document.getElementById('headless-state');
+
+    if (HEADLESS) {
+        // Đang ẩn browser
+        state.innerText = 'HIDDEN';
+        btn.classList.remove('btn-headless-on');
+        btn.classList.add('btn-headless-off');
+    } else {
+        // Đang hiện browser
+        state.innerText = 'VISIBLE';
+        btn.classList.remove('btn-headless-off');
+        btn.classList.add('btn-headless-on');
+    }
+}
+
+initHeadless();

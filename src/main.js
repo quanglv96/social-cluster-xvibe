@@ -119,6 +119,7 @@ function startServer() {
                 PORTABLE_EXECUTABLE_DIR: process.env.PORTABLE_EXECUTABLE_DIR
                     || path.dirname(process.execPath),
                 FB_PROFILES_DIR: path.join(userDataPath, 'fb_profiles'), // ← AppData, an toàn
+                HEADLESS: String(HEADLESS),   // ✅ truyền xuống child process
             }
         }
     );
@@ -252,4 +253,17 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('get-version', () => {
     return app.getVersion();
+});
+
+
+// ==========UPDATE HEADLESS REALTIME==========
+let HEADLESS = true; // 🔥 sync với BrowserManager default
+
+ipcMain.handle('get-headless', () => HEADLESS);
+
+ipcMain.on('set-headless', (e, val) => {
+    HEADLESS = val;
+    if (serverProcess) {
+        serverProcess.send({ type: 'SET_HEADLESS', payload: val });
+    }
 });
