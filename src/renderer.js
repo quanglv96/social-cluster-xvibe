@@ -139,3 +139,10 @@ ipcRenderer.on("queue", (_, items) => {
         }
     });
 });
+
+async function loadVersion() {
+    const version = await ipcRenderer.invoke('get-version');
+    document.getElementById('app-version').innerText = `v${version}`;
+}
+
+loadVersion();

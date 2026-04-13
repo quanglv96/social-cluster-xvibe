@@ -249,3 +249,7 @@ app.on('window-all-closed', () => {
     if (serverProcess) serverProcess.kill();
     if (process.platform !== 'darwin') app.quit();
 });
+
+ipcMain.handle('get-version', () => {
+    return app.getVersion();
+});
