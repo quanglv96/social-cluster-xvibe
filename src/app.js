@@ -1,6 +1,6 @@
 import express from 'express';
 import http from 'http';
-import triggerRoutes, { getQueueItems, getActiveRequests } from './routes/trigger.routes.js';
+import triggerRoutes, { getQueueItems, getActiveRequests, getTotalRequests } from './routes/trigger.routes.js';
 import {BrowserManager} from './core/browser/BrowserManager.js';
 import {AppRegistryService} from "./AppRegistryService.js";
 import {TunnelService} from "./TunnelService.js";
@@ -347,7 +347,7 @@ setInterval(() => {
     sendToUI('stats', {
         cpu: cpuLoad.toFixed(2),
         memory,
-        requests: getActiveRequests(),
+        requests: getTotalRequests(),
         error: errorCount
     });
 

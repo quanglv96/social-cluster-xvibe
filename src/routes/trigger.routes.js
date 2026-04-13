@@ -159,7 +159,13 @@ export function getQueueItems() {
     return buildQueueItems();
 }
 
+// Dùng cho overload check trong app.js middleware
 export function getActiveRequests() {
+    return ACTIVE_REQUESTS;
+}
+
+// Dùng cho stats UI — tổng requests đã nhận
+export function getTotalRequests() {
     return TOTAL_REQUESTS;
 }
 
