@@ -12,6 +12,7 @@ export class SocialFactory {
             case 'POST_STORY':
             case 'POST_PROFILE':
             case 'CRAWLS_FB':
+            case 'PARTNER_POST_GROUP':
                 return new FacebookSocial(context);
 
             case 'POST_TWITTER':

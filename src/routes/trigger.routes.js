@@ -10,6 +10,8 @@ import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
 import {TwCrawlTrigger} from "../triggers/TwCrawlTrigger.js";
 import {FacebookContextPool} from "../core/auth/FacebookContextPool.js";
 import {TwitterContextPool} from "../core/auth/TwitterContextPool.js";
+import { resetTunnelServer } from "../app.js";
+import {PartnerPostGroupTrigger} from "../triggers/PartnerPostGroupTrigger.js";
 
 const router = express.Router();
 
@@ -126,6 +128,29 @@ async function sendCallback(callbackUrl, schedulerId, requestId, actionName, dto
         logError(requestId, 'CALLBACK FAILED', e);
     }
 }
+// =========================
+// Idle Timer — re-tunnel nếu 4 phút không có request
+// =========================
+
+const IDLE_TIMEOUT_MS = 4 * 60 * 1000;
+let _idleTimer = null;
+
+function _resetIdleTimer() {
+    console.log("_resetIdleTimer start")
+    if (_idleTimer) clearTimeout(_idleTimer);
+    _idleTimer = setTimeout(async () => {
+        sendToRenderer('warn', `[${nowIso()}] [IDLE_TIMER] ⏰ No request for 4min — re-tunneling`);
+        try {
+            await resetTunnelServer();
+            sendToRenderer('ok', `[${nowIso()}] [IDLE_TIMER] ✅ re-tunnel success`);
+        } catch (err) {
+            sendToRenderer('error', `[${nowIso()}] [IDLE_TIMER] ❌ re-tunnel failed | error=${err.message}`);
+        }
+    }, IDLE_TIMEOUT_MS);
+}
+
+// ← Khởi động timer ngay khi server start
+_resetIdleTimer();
 
 // =========================
 // FIFO Queue — PENDING / PROCESSING / SUCCESS / ERROR
@@ -251,7 +276,7 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
 
     QUEUE_SIZE++;
     TOTAL_REQUESTS++;
-
+    _resetIdleTimer(); // ← reset mỗi khi có request mới
     const separator = '\n' + '='.repeat(80);
     sendToRenderer('info', separator);
 
@@ -513,6 +538,9 @@ router.post('/post_tweet', (req, res) =>
 
 router.post('/post-profile', (req, res) =>
     enqueueRequest(req, res, 'POST_PROFILE', PostProfileTrigger)
+);
+router.post('/partner-post-group', (req, res) =>
+    enqueueRequest(req, res, 'PARTNER_POST_GROUP', PartnerPostGroupTrigger)
 );
 
 router.post('/bot/sleep', async (req, res) => {

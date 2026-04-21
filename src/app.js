@@ -1,6 +1,6 @@
 import express from 'express';
 import http from 'http';
-import triggerRoutes, { getQueueItems, getActiveRequests, getTotalRequests } from './routes/trigger.routes.js';
+import triggerRoutes, {getQueueItems, getActiveRequests, getTotalRequests} from './routes/trigger.routes.js';
 import {BrowserManager} from './core/browser/BrowserManager.js';
 import {AppRegistryService} from "./AppRegistryService.js";
 import {TunnelService} from "./TunnelService.js";
@@ -230,6 +230,13 @@ async function bootstrap() {
         logError('APP', 'bootstrap failed', { error: err.message });
         process.exit(1);
     }
+}
+
+// app.js
+export async function resetTunnelServer() { // ← thêm async, sửa typo Server
+    const publicUrl = await TunnelService.start(PORT);
+    log('TUNNEL', `started`, { url: publicUrl });
+    await registerWithRetry(publicUrl);
 }
 
 // =========================
