@@ -125,9 +125,54 @@ export class FacebookPartnerPostGroup {
                     await textbox.click();
                     await this.delay.action('after focus textbox', page);
 
-                    await page.keyboard.press('Control+A');
-                    await page.keyboard.press('Backspace');
-                    await textbox.type(content, {delay: this.delay.random(40, 120)});
+                    try {
+                        // cấp quyền clipboard
+                        await this.context.grantPermissions(['clipboard-read', 'clipboard-write']);
+                        await page.evaluate(async (text) => {
+                            await navigator.clipboard.writeText(text);
+                        }, content);
+
+                        await page.keyboard.press('Control+A');
+                        await page.keyboard.press('Backspace');
+                        await page.keyboard.press('Control+V');
+
+                        log(TAG, 'Content pasted via clipboard');
+
+                    } catch (e) {
+                        logWarn(TAG, 'Clipboard failed, fallback to JS set');
+
+                        await page.evaluate((text) => {
+                            const el = document.querySelector(
+                                'div[role="dialog"] div[role="textbox"][contenteditable="true"]'
+                            );
+
+                            if (el) {
+                                el.focus();
+
+                                // clear
+                                el.innerHTML = '';
+
+                                // insert text đúng chuẩn
+                                const lines = text.split('\n');
+
+                                lines.forEach((line, index) => {
+                                    const span = document.createElement('span');
+                                    span.textContent = line;
+                                    el.appendChild(span);
+
+                                    if (index < lines.length - 1) {
+                                        el.appendChild(document.createElement('br'));
+                                    }
+                                });
+
+                                // trigger event giống user
+                                el.dispatchEvent(new InputEvent('input', {bubbles: true}));
+                                el.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true}));
+                                el.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+                            }
+                        }, content);
+                    }
+
                     log(TAG, `Content filled`);
                     await this.delay.action('after typing content', page);
 
