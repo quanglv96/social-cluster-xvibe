@@ -1,15 +1,17 @@
 import { SessionManager } from '../session/SessionManager.js';
 import { SocialFactory } from "../factory/SocialFactory.js";
 import { FacebookSocial } from "../social/facebook/FacebookSocial.js";
-import { TwitterSocial } from "../social/twitter/TwitterSocial.js";   // thêm mới
+import { TwitterSocial } from "../social/twitter/TwitterSocial.js";
+import { TiktokSocial } from "../social/tiktok/TiktokSocial.js";
 import { FacebookContextPool } from "../auth/FacebookContextPool.js";
-import { TwitterContextPool } from "../auth/TwitterContextPool.js";   // thêm mới
+import { TwitterContextPool } from "../auth/TwitterContextPool.js";
 
 export class ContextFactory {
 
     static async create(dto) {
-        const FB_TYPES = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB','POST_TOOL_PAGE'];
-        const TW_TYPES = ['CRAWLS_TWITTER', 'POST_TWITTER'];  // thêm mới — sửa lại theo type thực tế
+        const FB_TYPES = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE','FB_UPLOAD_REEL'];
+        const TW_TYPES = ['CRAWLS_TWITTER', 'POST_TWITTER'];
+        const TK_TYPES = ['TIKTOK_UPLOAD'];
 
         const { type } = dto;
 
@@ -28,6 +30,15 @@ export class ContextFactory {
             return {
                 context,
                 social: new TwitterSocial(context)
+            };
+        }
+
+        // TikTok — dùng root session, auth tự handle trong TiktokSocial
+        if (TK_TYPES.includes(type)) {
+            const { context } = await SessionManager.getSession();
+            return {
+                context,
+                social: new TiktokSocial(context)
             };
         }
 

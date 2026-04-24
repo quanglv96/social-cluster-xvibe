@@ -111,7 +111,7 @@ export class TiktokAuth extends BaseAuth {
         log(TAG, `Detected CAPTCHA — notifying backend...`);
 
         try {
-            await axios.post(`${runtimeConfig.api.baseUrl}/api/vibe/verify-capcha/TIKTOK`);
+            await axios.post(`${runtimeConfig.api.apiNotifyCaptcha}/TIKTOK`);
             logOk(TAG, `Backend notified about CAPTCHA`);
         } catch (err) {
             logWarn(TAG, `Failed to notify backend about CAPTCHA`, { error: err.message });
@@ -223,16 +223,15 @@ export class TiktokAuth extends BaseAuth {
                 }
                 logOk(TAG, `Username typed`, { value: typedUser });
 
-                // --- Tab sang password ---
-                log(TAG, `Pressing Tab to move to password field...`);
-                await page.keyboard.press('Tab');
-                await this.sleep(600);
+                // --- Click vào password input ---
+                log(TAG, `Clicking password field...`);
+                const passwordInput = page.locator('input[type="password"]');
+                await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+                await this.humanClick(page, 'input[type="password"]');
+                await this.sleep(400);
 
                 // --- Password ---
                 log(TAG, `Typing password...`);
-                const passwordInput = page.locator('input[type="password"]');
-                await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
-
                 for (const char of password) {
                     await page.keyboard.type(char, { delay: 80 + Math.random() * 120 });
                 }

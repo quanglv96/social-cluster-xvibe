@@ -3,7 +3,7 @@ import axios from 'axios';
 import path from 'path';
 import os from 'os';
 
-import { runtimeConfig } from '../../../config/config.js';
+import {runtimeConfig} from '../../../config/config.js';
 
 // =========================
 // Log Utils
@@ -19,7 +19,7 @@ function formatMsg(requestId, message, fields = {}) {
 }
 
 function sendToRenderer(type, msg) {
-    process.send?.({ type: 'LOG', data: { type, msg } });
+    process.send?.({type: 'LOG', data: {type, msg}});
 }
 
 function log(requestId, message, fields = {}) {
@@ -33,7 +33,7 @@ function logWarn(requestId, message, fields = {}) {
 }
 
 function logError(requestId, message, err) {
-    const msg = formatMsg(requestId, `❌ ${message}`, { error: err?.message || err });
+    const msg = formatMsg(requestId, `❌ ${message}`, {error: err?.message || err});
     sendToRenderer('error', msg);
 }
 
@@ -64,7 +64,8 @@ const MAX_UPLOAD_RETRY = 3;
 
 export class TiktokUploadVideo {
 
-    constructor() {}
+    constructor() {
+    }
 
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
@@ -77,23 +78,23 @@ export class TiktokUploadVideo {
 
     /**
      * @param {Object} dto
-     * @param {string} dto.video_url   - URL video cần upload
-     * @param {string} dto.caption     - Nội dung mô tả (caption)
+     * @param {string} dto.source   - URL video cần upload
+     * @param {string} dto.content     - Nội dung mô tả (caption)
      * @param {import('playwright').Page} page - Page đang mở màn upload
      */
-    async upload({ video_url, caption }, page) {
+    async upload({source: mediaId, content: caption}, page) {
         if (!page) throw new Error('TiktokUploadVideo requires a Playwright page');
-        if (!video_url) throw new Error('video_url is required');
+        if (!mediaId) throw new Error('mediaId is required');
 
         let tempFile = null;
 
         try {
-            log(TAG, `🚀 START upload`, { video_url, caption: caption?.slice(0, 40) });
+            log(TAG, `🚀 START upload`, {mediaId, caption: caption?.slice(0, 40)});
 
             // STEP 1: Tải video về máy
             log(TAG, `STEP 1: Downloading video...`);
-            tempFile = await this.downloadVideo(video_url);
-            log(TAG, `Video downloaded`, { filePath: tempFile });
+            tempFile = await this.downloadVideo(mediaId);
+            log(TAG, `Video downloaded`, {filePath: tempFile});
 
             // STEP 2+3: Kéo video vào màn hình upload — có retry tối đa 3 lần
             log(TAG, `STEP 2+3: Drop video & wait for upload success...`);
@@ -112,7 +113,7 @@ export class TiktokUploadVideo {
             await this.clickPostButton(page);
 
             logOk(TAG, `🎉 Video upload complete`);
-            return { success: true, video_url };
+            return {success: true, mediaId};
 
         } finally {
             // Luôn xóa file rác dù thành công hay thất bại
@@ -128,20 +129,20 @@ export class TiktokUploadVideo {
         try {
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
-                logOk(TAG, `🗑️  Temp file deleted`, { filePath });
+                logOk(TAG, `🗑️  Temp file deleted`, {filePath});
             }
         } catch (err) {
-            logWarn(TAG, `Failed to delete temp file (non-critical)`, { filePath, error: err.message });
+            logWarn(TAG, `Failed to delete temp file (non-critical)`, {filePath, error: err.message});
         }
     }
 
     // ------------------------------------------------
     // STEP 1: Tải video từ URL về /tmp
     // ------------------------------------------------
-    async downloadVideo(url) {
-        log(TAG, `Downloading video`, { url });
-
-        const response = await axios.get(url, {
+    async downloadVideo(mediaId) {
+        log(TAG, `Downloading video`, {mediaId});
+        const hostUrl = runtimeConfig.api.apiGetVideo + mediaId
+        const response = await axios.get(hostUrl, {
             responseType: 'arraybuffer',
             timeout: 120_000, // 2 phút cho video nặng
         });
@@ -160,7 +161,7 @@ export class TiktokUploadVideo {
         }
 
         const sizeKB = Math.round(response.data.byteLength / 1024);
-        logOk(TAG, `Video downloaded`, { filePath, sizeKB: `${sizeKB}KB` });
+        logOk(TAG, `Video downloaded`, {filePath, sizeKB: `${sizeKB}KB`});
         return filePath;
     }
 
@@ -170,12 +171,12 @@ export class TiktokUploadVideo {
     async dropVideoWithRetry(page, filePath) {
         for (let attempt = 1; attempt <= MAX_UPLOAD_RETRY; attempt++) {
             try {
-                log(TAG, `Drop+upload attempt`, { attempt: `${attempt}/${MAX_UPLOAD_RETRY}` });
+                log(TAG, `Drop+upload attempt`, {attempt: `${attempt}/${MAX_UPLOAD_RETRY}`});
 
                 // Nếu không phải lần đầu → reload trang upload và chờ
                 if (attempt > 1) {
                     logWarn(TAG, `Retrying — reloading upload page...`);
-                    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+                    await page.reload({waitUntil: 'domcontentloaded', timeout: 30000});
                     await this.sleep(4000);
 
                     // Đảm bảo drop zone đã sẵn sàng sau reload
@@ -222,8 +223,8 @@ export class TiktokUploadVideo {
 
         for (const sel of dropZoneSelectors) {
             try {
-                await page.waitForSelector(sel, { timeout: 8000 });
-                log(TAG, `Drop zone found`, { selector: sel });
+                await page.waitForSelector(sel, {timeout: 8000});
+                log(TAG, `Drop zone found`, {selector: sel});
                 return;
             } catch (_) {
                 // thử cái tiếp
@@ -232,7 +233,8 @@ export class TiktokUploadVideo {
 
         // Fallback: chỉ chờ DOM ổn định
         logWarn(TAG, `Drop zone selector not found — falling back to networkidle`);
-        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+        await page.waitForLoadState('networkidle', {timeout: 15000}).catch(() => {
+        });
         await this.sleep(2000);
     }
 
@@ -240,10 +242,10 @@ export class TiktokUploadVideo {
     // Kéo (drag & drop) file video vào giữa màn hình
     // ------------------------------------------------
     async dropVideoFile(page, filePath) {
-        log(TAG, `Dropping video file`, { filePath });
+        log(TAG, `Dropping video file`, {filePath});
 
         const fileName = path.basename(filePath);
-        const fileBase64 = fs.readFileSync(filePath, { encoding: 'base64' });
+        const fileBase64 = fs.readFileSync(filePath, {encoding: 'base64'});
 
         // Xác định MIME type
         const mimeType = fileName.endsWith('.mp4') ? 'video/mp4'
@@ -252,20 +254,20 @@ export class TiktokUploadVideo {
 
         // Tạo DataTransfer trong browser context
         const dataTransfer = await page.evaluateHandle(
-            async ({ fileBase64, fileName, mimeType }) => {
+            async ({fileBase64, fileName, mimeType}) => {
                 const byteCharacters = atob(fileBase64);
                 const byteNumbers = new Array(byteCharacters.length);
                 for (let i = 0; i < byteCharacters.length; i++) {
                     byteNumbers[i] = byteCharacters.charCodeAt(i);
                 }
                 const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: mimeType });
-                const file = new File([blob], fileName, { type: mimeType });
+                const blob = new Blob([byteArray], {type: mimeType});
+                const file = new File([blob], fileName, {type: mimeType});
                 const dt = new DataTransfer();
                 dt.items.add(file);
                 return dt;
             },
-            { fileBase64, fileName, mimeType }
+            {fileBase64, fileName, mimeType}
         );
 
         // Lấy tọa độ giữa màn hình để drop
@@ -273,15 +275,15 @@ export class TiktokUploadVideo {
         const centerX = viewport ? viewport.width / 2 : 760;
         const centerY = viewport ? viewport.height / 2 : 400;
 
-        log(TAG, `Dispatching drag events`, { centerX, centerY });
+        log(TAG, `Dispatching drag events`, {centerX, centerY});
 
-        await page.dispatchEvent('body', 'dragenter', { dataTransfer });
+        await page.dispatchEvent('body', 'dragenter', {dataTransfer});
         await this.sleep(300);
-        await page.dispatchEvent('body', 'dragover', { dataTransfer });
+        await page.dispatchEvent('body', 'dragover', {dataTransfer});
         await this.sleep(300);
         await page.mouse.move(centerX, centerY);
         await this.sleep(200);
-        await page.dispatchEvent('body', 'drop', { dataTransfer });
+        await page.dispatchEvent('body', 'drop', {dataTransfer});
 
         logOk(TAG, `Video dropped — waiting for processing...`);
 
@@ -313,29 +315,29 @@ export class TiktokUploadVideo {
             const isSuccess = await page.evaluate(() => {
                 // Cách 1: class info-status success
                 const statusEl = document.querySelector('.info-status.success');
-                if (statusEl) return { ok: true, method: 'info-status.success' };
+                if (statusEl) return {ok: true, method: 'info-status.success'};
 
                 // Cách 2: icon CheckCircleFill xuất hiện trong info-body
                 const checkIcon = document.querySelector('.info-body [data-icon="CheckCircleFill"]');
-                if (checkIcon) return { ok: true, method: 'CheckCircleFill icon' };
+                if (checkIcon) return {ok: true, method: 'CheckCircleFill icon'};
 
                 // Cách 3: text "Đã tải lên" trong info-status
                 const allStatus = document.querySelectorAll('[class*="info-status"]');
                 for (const el of allStatus) {
                     if (el.textContent.includes('Đã tải lên')) {
-                        return { ok: true, method: 'text:Đã tải lên' };
+                        return {ok: true, method: 'text:Đã tải lên'};
                     }
                 }
 
                 // Kiểm tra lỗi upload
                 const errorEl = document.querySelector('.info-status.error, [class*="upload-error"], [class*="error-status"]');
-                if (errorEl) return { ok: false, error: true, text: errorEl.textContent?.trim() };
+                if (errorEl) return {ok: false, error: true, text: errorEl.textContent?.trim()};
 
-                return { ok: false, error: false };
+                return {ok: false, error: false};
             });
 
             if (isSuccess.ok) {
-                logOk(TAG, `Upload confirmed`, { method: isSuccess.method, elapsed: `${Math.round(elapsed / 1000)}s` });
+                logOk(TAG, `Upload confirmed`, {method: isSuccess.method, elapsed: `${Math.round(elapsed / 1000)}s`});
                 return;
             }
 
@@ -345,7 +347,7 @@ export class TiktokUploadVideo {
 
             // Vẫn đang upload — log tiến trình mỗi 15s
             if (elapsed % 15000 < UPLOAD_POLL_INTERVAL_MS) {
-                log(TAG, `Still uploading...`, { elapsed: `${Math.round(elapsed / 1000)}s` });
+                log(TAG, `Still uploading...`, {elapsed: `${Math.round(elapsed / 1000)}s`});
             }
 
             await this.sleep(UPLOAD_POLL_INTERVAL_MS);
@@ -361,14 +363,14 @@ export class TiktokUploadVideo {
             return;
         }
 
-        log(TAG, `Filling caption...`, { length: caption.length });
+        log(TAG, `Filling caption...`, {length: caption.length});
 
         // Tìm contenteditable của DraftEditor trong caption container
         const captionEditor = page.locator(
             '[data-e2e="caption_container"] .public-DraftEditor-content'
         );
 
-        await captionEditor.waitFor({ state: 'visible', timeout: 15000 });
+        await captionEditor.waitFor({state: 'visible', timeout: 15000});
 
         // Click vào editor để focus
         await captionEditor.click();
@@ -383,14 +385,14 @@ export class TiktokUploadVideo {
 
         // Gõ caption từng ký tự (human-like)
         for (const char of caption) {
-            await page.keyboard.type(char, { delay: 30 + Math.random() * 50 });
+            await page.keyboard.type(char, {delay: 30 + Math.random() * 50});
         }
 
         await this.sleep(800);
 
         // Verify
         const currentText = await captionEditor.innerText();
-        log(TAG, `Caption filled`, { preview: currentText.slice(0, 60) });
+        log(TAG, `Caption filled`, {preview: currentText.slice(0, 60)});
 
         logOk(TAG, `Caption set successfully`);
     }
@@ -399,12 +401,12 @@ export class TiktokUploadVideo {
     // STEP 5: Cuộn xuống N lần
     // ------------------------------------------------
     async scrollDown(page, times = 2) {
-        log(TAG, `Scrolling down`, { times });
+        log(TAG, `Scrolling down`, {times});
 
         for (let i = 0; i < times; i++) {
             await page.mouse.wheel(0, 500);
             await this.sleep(800);
-            log(TAG, `Scrolled`, { step: `${i + 1}/${times}` });
+            log(TAG, `Scrolled`, {step: `${i + 1}/${times}`});
         }
 
         await this.sleep(500);
@@ -423,7 +425,7 @@ export class TiktokUploadVideo {
             try {
                 // Selector ưu tiên: data-e2e="post_video_button"
                 const postBtn = page.locator('[data-e2e="post_video_button"]');
-                await postBtn.waitFor({ state: 'visible', timeout: 15000 });
+                await postBtn.waitFor({state: 'visible', timeout: 15000});
 
                 // Chờ button không còn disabled / loading
                 await page.waitForFunction(() => {
@@ -432,7 +434,7 @@ export class TiktokUploadVideo {
                     return btn.getAttribute('data-disabled') !== 'true'
                         && btn.getAttribute('data-loading') !== 'true'
                         && btn.getAttribute('aria-disabled') !== 'true';
-                }, { timeout: 30000 });
+                }, {timeout: 30000});
 
                 logOk(TAG, `Post button is ready — clicking`);
 
@@ -442,21 +444,21 @@ export class TiktokUploadVideo {
                 const targetX = box.x + box.width * (0.4 + Math.random() * 0.2);
                 const targetY = box.y + box.height * (0.4 + Math.random() * 0.2);
 
-                await page.mouse.move(targetX, targetY, { steps: 15 });
+                await page.mouse.move(targetX, targetY, {steps: 15});
                 await this.sleep(150 + Math.random() * 150);
                 await page.mouse.click(targetX, targetY);
 
-                logOk(TAG, `Post button clicked`, { x: Math.round(targetX), y: Math.round(targetY) });
+                logOk(TAG, `Post button clicked`, {x: Math.round(targetX), y: Math.round(targetY)});
 
                 // Chờ xác nhận đã đăng thành công — TikTok thường redirect hoặc hiện toast
                 const postResult = await Promise.race([
-                    page.waitForURL('**/tiktokstudio**', { timeout: 30000 }).then(() => 'STUDIO'),
-                    page.waitForURL('**/@**', { timeout: 30000 }).then(() => 'PROFILE'),
-                    page.waitForSelector('[class*="success-toast"], [class*="post-success"]', { timeout: 30000 }).then(() => 'TOAST'),
+                    page.waitForURL('**/tiktokstudio**', {timeout: 30000}).then(() => 'STUDIO'),
+                    page.waitForURL('**/@**', {timeout: 30000}).then(() => 'PROFILE'),
+                    page.waitForSelector('[class*="success-toast"], [class*="post-success"]', {timeout: 30000}).then(() => 'TOAST'),
                     this.sleep(30000).then(() => 'TIMEOUT'),
                 ]).catch(() => 'TIMEOUT');
 
-                log(TAG, `Post result`, { postResult });
+                log(TAG, `Post result`, {postResult});
 
                 if (postResult === 'TIMEOUT') {
                     logWarn(TAG, `No redirect detected after post — may still be processing`);

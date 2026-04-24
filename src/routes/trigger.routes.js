@@ -12,6 +12,8 @@ import {FacebookContextPool} from "../core/auth/FacebookContextPool.js";
 import {TwitterContextPool} from "../core/auth/TwitterContextPool.js";
 import { resetTunnelServer } from "../app.js";
 import {PartnerPostGroupTrigger} from "../triggers/PartnerPostGroupTrigger.js";
+import {TiktokUploadTrigger} from "../triggers/TiktokUploadTrigger.js";
+import {PostFbReelsTrigger} from "../triggers/PostFbReelsTrigger.js";
 
 const router = express.Router();
 
@@ -19,16 +21,6 @@ let ACTIVE_REQUESTS = 0;
 let EVENT_PAGE_SEQ = 0;
 let QUEUE_SIZE = 0;
 let TOTAL_REQUESTS = 0;
-
-// =========================
-// Types cần smart-close context
-// =========================
-const CONTEXT_MANAGED_TYPES = new Set([
-    'POST_GROUP_FB',
-    'POST_PROFILE',
-    'POST_TWITTER',
-    'POST_STORY',
-]);
 
 // =========================
 // Utils
@@ -314,12 +306,17 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
         const fakeRes = {
             headersSent: false,
             _statusCode: 200,
+            status(code) {
+                this._statusCode = code;
+                return this; // chain: res.status(500).json(...)
+            },
             json(data) {
                 this.headersSent = true;
-                sendCallback(callbackUrl, schedulerId, requestId, actionName, dtoType, true, data)
+                const success = this._statusCode < 400;
+                sendCallback(callbackUrl, schedulerId, requestId, actionName, dtoType, success, data)
                     .catch(() => {});
             }
-        };
+        }
 
         try {
             await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime, dtoType);
@@ -339,7 +336,16 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
 // =========================
 // handleRequest
 // =========================
-
+// =========================
+// Types cần smart-close context
+// =========================
+const CONTEXT_MANAGED_TYPES = new Set([
+    'POST_GROUP_FB',
+    'POST_PROFILE',
+    'POST_TWITTER',
+    'POST_STORY',
+    'FB_UPLOAD_REEL',
+]);
 async function handleRequest(req, res, actionName, TriggerClass, requestId, startTime, currentDtoType) {
     const dto = req.body;
 
@@ -353,7 +359,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
     ACTIVE_REQUESTS++;
     log(requestTrace, `🚀 REQUEST START`, {action: actionName, active: ACTIVE_REQUESTS, pid: process.pid});
 
-    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE'].includes(dto.type);
+    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE','FB_UPLOAD_REEL'].includes(dto.type);
     const isTwitter = ['CRAWLS_TWITTER', 'POST_TWITTER'].includes(dto.type);
 
     try {
@@ -545,6 +551,14 @@ router.post('/post_tweet', (req, res) =>
 
 router.post('/post-profile', (req, res) =>
     enqueueRequest(req, res, 'POST_PROFILE', PostProfileTrigger)
+);
+
+router.post('/upload-tiktok', (req, res) =>
+    enqueueRequest(req, res, 'TIKTOK_UPLOAD', TiktokUploadTrigger)
+);
+
+router.post('/upload-reel', (req, res) =>
+    enqueueRequest(req, res, 'FB_UPLOAD_REEL', PostFbReelsTrigger)
 );
 
 router.post('/partner-post-group', (req, res) =>
