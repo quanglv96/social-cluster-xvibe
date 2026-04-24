@@ -43,6 +43,8 @@ function logOk(requestId, message, fields = {}) {
 
 const TAG = 'XVIBE_NAV';
 
+const MAX_CONSECUTIVE_ERRORS = 5; // dừng hẳn nếu crash liên tiếp quá ngưỡng này
+
 export class XvibeNavigator {
 
     constructor(rootPage, shouldStopFn) {
@@ -103,6 +105,36 @@ export class XvibeNavigator {
     }
 
     // =========================
+    // RECOVERY sau khi scrollAndClick crash
+    // =========================
+    async recover() {
+        logWarn(this.requestId, 'Attempting recovery...');
+
+        // Page bị đóng → không recover được
+        if (!this.page || this.page.isClosed()) {
+            logError(this.requestId, 'Page is closed, cannot recover');
+            this.running = false;
+            return false;
+        }
+
+        try {
+            // Chờ page ổn định lại
+            await this.page.waitForTimeout(3000);
+            await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+
+            // Mở lại Vibe UI
+            await this.openVibe();
+
+            logOk(this.requestId, 'Recovery successful');
+            return true;
+
+        } catch (err) {
+            logError(this.requestId, 'Recovery failed', err);
+            return false;
+        }
+    }
+
+    // =========================
     // MAIN LOOP
     // =========================
     async start() {
@@ -116,6 +148,7 @@ export class XvibeNavigator {
         await this.openVibe();
 
         let counter = 0;
+        let consecutiveErrors = 0;
 
         while (this.running) {
 
@@ -127,21 +160,18 @@ export class XvibeNavigator {
                 }
 
                 await this.scrollAndClick();
+
+                // Reset error streak khi thành công
+                consecutiveErrors = 0;
                 counter++;
 
                 // 🔥 đủ 100 lần → reload
                 if (counter >= 100) {
 
-                    log(this.requestId, 'Reloading after threshold', {
-                        counter
-                    });
+                    log(this.requestId, 'Reloading after threshold', { counter });
 
                     await this.page.waitForTimeout(1000);
-
-                    await this.page.reload({
-                        waitUntil: 'domcontentloaded'
-                    });
-
+                    await this.page.reload({ waitUntil: 'domcontentloaded' });
                     await this.page.waitForTimeout(1500);
                     await this.openVibe();
 
@@ -155,7 +185,27 @@ export class XvibeNavigator {
                 );
 
             } catch (err) {
-                logError(this.requestId, 'Navigator loop error', err);
+                consecutiveErrors++;
+
+                logError(this.requestId, `Loop error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`, err);
+
+                // Quá nhiều lỗi liên tiếp → dừng hẳn
+                if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                    logError(this.requestId, 'Too many consecutive errors, stopping navigator');
+                    this.running = false;
+                    break;
+                }
+
+                // Thử recovery
+                const recovered = await this.recover();
+                if (!recovered) {
+                    logError(this.requestId, 'Recovery failed, stopping navigator');
+                    this.running = false;
+                    break;
+                }
+
+                // Reset counter sau recovery để tránh reload ngay lập tức
+                counter = 0;
             }
         }
 

@@ -49,28 +49,28 @@ function logOk(requestId, message, fields = {}) {
 
 export class FacebookPostGroup {
 
-    static lastMode = 'PAGE';
-
     constructor(context) {
         this.context = context;
         this.delay = new DelayService();
         this.profile = new FacebookPostProfile();
     }
 
-    getNextPostMode() {
-        const next = FacebookPostGroup.lastMode === 'PAGE' ? 'PROFILE' : 'PAGE';
-        FacebookPostGroup.lastMode = next;
-        return next;
-    }
-
     /**
-     * 🔥 page được truyền từ SessionManager
+     * @param {object} params
+     * @param {string} params.page_admin_url   - URL trang admin của Page
+     * @param {string} params.content          - Nội dung bài đăng
+     * @param {string} params.url_image        - URL ảnh (optional)
+     * @param {string[]} params.url_groups     - Danh sách URL các nhóm
+     * @param {boolean} [params.page=true]     - true: đăng lên Page trước khi post groups
+     * @param {boolean} [params.profile=true]  - true: đăng lên Profile trước khi post groups
      */
     async post({
                    page_admin_url: pageAdminUrl,
                    content,
                    url_image: imageUrl,
-                   url_groups: groupUrls
+                   url_groups: groupUrls,
+                   page: shouldPostPage = true,
+                   profile: shouldPostProfile = true,
                }, page) {
 
         if (!page) {
@@ -84,6 +84,8 @@ export class FacebookPostGroup {
             log(TAG, `Start post process`, {
                 totalGroups: groupUrls.length,
                 hasImage: !!imageUrl,
+                shouldPostPage,
+                shouldPostProfile,
             });
 
             // ===== DOWNLOAD IMAGE ONCE =====
@@ -93,24 +95,28 @@ export class FacebookPostGroup {
                 logOk(TAG, `Image downloaded`, { filePath: imageFilePath });
             }
 
-            // ===== POST TO PROFILE FIRST =====
-            await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
-            await this.delay.navigation('after goto home', page);
+            // ===== POST TO PROFILE =====
+            if (shouldPostProfile) {
+                await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
+                await this.delay.navigation('after goto home', page);
 
-            try {
-                await this.profile.postToProfile(page, content, imageFilePath);
-            } catch (err) {
-                logError(TAG, `Profile post failed`, err);
+                try {
+                    await this.profile.postToProfile(page, content, imageFilePath);
+                } catch (err) {
+                    logError(TAG, `Profile post failed`, err);
+                }
+            } else {
+                log(TAG, `Skip posting to Profile (profile=false)`);
             }
 
-            // ===== SWITCH PROFILE =====
-            const postMode = this.getNextPostMode();
-            log(TAG, `Auto select posting mode`, { postMode });
-
-            if (postMode === 'PAGE' && pageAdminUrl) {
+            // ===== SWITCH TO PAGE =====
+            if (shouldPostPage && pageAdminUrl) {
                 await this.switchToPage(page, pageAdminUrl, TAG);
+            } else {
+                log(TAG, `Skip switching to Page (page=false or no pageAdminUrl)`);
             }
 
+            // ===== POST TO GROUPS =====
             const groups = groupUrls.slice(0, 10);
 
             for (let i = 0; i < groups.length; i++) {
@@ -199,7 +205,8 @@ export class FacebookPostGroup {
 
             logOk(TAG, `Post process completed`);
 
-            if (postMode === 'PAGE' && pageAdminUrl) {
+            // ===== SWITCH BACK TO PROFILE =====
+            if (shouldPostPage && pageAdminUrl) {
                 await this.switchToProfile(page, TAG);
             }
 

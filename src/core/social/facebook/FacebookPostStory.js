@@ -56,7 +56,23 @@ export class FacebookPostStory {
         this.delay = new DelayService();
     }
 
-    async post({ page_admin_url, list_image, user_name, password }, page) {
+    /**
+     * @param {object} params
+     * @param {string} params.page_admin_url    - URL trang admin của Page
+     * @param {string[]} params.list_image      - Danh sách URL ảnh story
+     * @param {string} params.user_name
+     * @param {string} params.password
+     * @param {boolean} [params.profile=true]   - true: đăng story lên Profile
+     * @param {boolean} [params.page=true]      - true: đăng story lên Page
+     */
+    async post({
+                   page_admin_url,
+                   list_image,
+                   user_name,
+                   password,
+                   profile: shouldPostProfile = true,
+                   page: shouldPostPage = true,
+               }, page) {
 
         if (!page) {
             throw new Error("FacebookPostStory requires event page");
@@ -65,7 +81,11 @@ export class FacebookPostStory {
         let tempFiles = [];
 
         try {
-            log(TAG, `Start story posting`, { totalImages: list_image.length });
+            log(TAG, `Start story posting`, {
+                totalImages: list_image.length,
+                shouldPostProfile,
+                shouldPostPage,
+            });
 
             await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
             await this.delay.navigation('after goto facebook', page);
@@ -78,11 +98,15 @@ export class FacebookPostStory {
             }
 
             // ===== 1. POST TO PROFILE =====
-            log(TAG, `Posting story to PROFILE`);
-            await this.postStoryFlow(page, tempFiles, 'profile');
+            if (shouldPostProfile) {
+                log(TAG, `Posting story to PROFILE`);
+                await this.postStoryFlow(page, tempFiles, 'profile');
+            } else {
+                log(TAG, `Skip posting story to Profile (profile=false)`);
+            }
 
-            // ===== 2. SWITCH TO PAGE =====
-            if (page_admin_url) {
+            // ===== 2. SWITCH TO PAGE & POST =====
+            if (shouldPostPage && page_admin_url) {
                 log(TAG, `Switching to PAGE`);
                 await this.switchToPage(page, page_admin_url);
 
@@ -91,10 +115,12 @@ export class FacebookPostStory {
 
                 await page.waitForTimeout(5000);
                 await this.switchToProfile(page);
+            } else {
+                log(TAG, `Skip posting story to Page (page=false or no page_admin_url)`);
             }
 
             logOk(TAG, `Story process completed`);
-            return { success: true,list_image:list_image };
+            return { success: true, list_image: list_image };
 
         } finally {
             for (const file of tempFiles) {

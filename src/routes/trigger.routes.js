@@ -18,7 +18,17 @@ const router = express.Router();
 let ACTIVE_REQUESTS = 0;
 let EVENT_PAGE_SEQ = 0;
 let QUEUE_SIZE = 0;
-let TOTAL_REQUESTS = 0; // tổng requests đã nhận, chỉ tăng không giảm
+let TOTAL_REQUESTS = 0;
+
+// =========================
+// Types cần smart-close context
+// =========================
+const CONTEXT_MANAGED_TYPES = new Set([
+    'POST_GROUP_FB',
+    'POST_PROFILE',
+    'POST_TWITTER',
+    'POST_STORY',
+]);
 
 // =========================
 // Utils
@@ -128,6 +138,7 @@ async function sendCallback(callbackUrl, schedulerId, requestId, actionName, dto
         logError(requestId, 'CALLBACK FAILED', e);
     }
 }
+
 // =========================
 // Idle Timer — re-tunnel nếu 4 phút không có request
 // =========================
@@ -149,16 +160,14 @@ function _resetIdleTimer() {
     }, IDLE_TIMEOUT_MS);
 }
 
-// ← Khởi động timer ngay khi server start
 _resetIdleTimer();
 
 // =========================
 // FIFO Queue — PENDING / PROCESSING / SUCCESS / ERROR
 // =========================
 
-// taskRegistry: Map<id, { id, action, status, enqueuedAt, endedAt, fn }>
 const taskRegistry = new Map();
-const pendingQueue = []; // chỉ chứa id đang chờ xử lý
+const pendingQueue = []; // chứa { id, dtoType } để peek type của task tiếp theo
 let processing = false;
 
 function buildQueueItems() {
@@ -179,17 +188,14 @@ function buildQueueItems() {
     });
 }
 
-// Export để app.js đọc trong stats interval
 export function getQueueItems() {
     return buildQueueItems();
 }
 
-// Dùng cho overload check trong app.js middleware
 export function getActiveRequests() {
     return ACTIVE_REQUESTS;
 }
 
-// Dùng cho stats UI — tổng requests đã nhận
 export function getTotalRequests() {
     return TOTAL_REQUESTS;
 }
@@ -202,6 +208,7 @@ function enqueue(task, meta = {}) {
     const entry = {
         id:         meta.id || buildRequestId('TASK'),
         action:     meta.action || 'UNKNOWN',
+        dtoType:    meta.dtoType || null,   // ← lưu type để so sánh
         enqueuedAt: Date.now(),
         status:     'PENDING',
         fn:         task,
@@ -215,7 +222,6 @@ function enqueue(task, meta = {}) {
     processQueue().catch(err => logError('QUEUE', 'processQueue failed', err));
 }
 
-// Nhả event loop để IPC message kịp flush tới renderer
 function yieldToUI() {
     return new Promise(resolve => setImmediate(resolve));
 }
@@ -230,12 +236,11 @@ async function processQueue() {
             const entry = taskRegistry.get(id);
             if (!entry) continue;
 
-            // → PROCESSING: yield trước để renderer kịp render PENDING
             await yieldToUI();
             entry.status = 'PROCESSING';
             entry.processingStartAt = Date.now();
             sendQueueToUI();
-            await yieldToUI(); // yield thêm lần nữa để PROCESSING flush trước khi task bắt đầu
+            await yieldToUI();
 
             try {
                 await entry.fn();
@@ -248,7 +253,6 @@ async function processQueue() {
                 QUEUE_SIZE = Math.max(0, QUEUE_SIZE - 1);
                 sendQueueToUI();
 
-                // Giữ SUCCESS/ERROR trên UI 5s rồi xóa
                 setTimeout(() => {
                     taskRegistry.delete(id);
                     sendQueueToUI();
@@ -276,7 +280,7 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
 
     QUEUE_SIZE++;
     TOTAL_REQUESTS++;
-    _resetIdleTimer(); // ← reset mỗi khi có request mới
+    _resetIdleTimer();
     const separator = '\n' + '='.repeat(80);
     sendToRenderer('info', separator);
 
@@ -289,7 +293,6 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
     });
     log(requestTrace, `REQ BODY`, {body: safeJson(dto)});
 
-    // ✅ Trả về ngay — Java không bị timeout dù crawl lâu bao nhiêu
     res.status(202).json({
         success: true,
         request_id: requestId,
@@ -301,7 +304,6 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
 
     log(requestTrace, `↩️ 202 ACCEPTED`, {callbackUrl: callbackUrl || 'none'});
 
-    // Xử lý ngầm sau khi đã trả response
     enqueue(async () => {
         log(requestId, `🎯 DEQUEUED`, {
             action: actionName,
@@ -320,7 +322,7 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
         };
 
         try {
-            await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime);
+            await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime, dtoType);
         } finally {
             log(requestId, `🏁 DONE`, {
                 action: actionName,
@@ -331,14 +333,14 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
             const closingSeparator = '='.repeat(80);
             sendToRenderer('info', closingSeparator);
         }
-    }, { id: requestId, action: actionName }); // ← meta cho taskRegistry
+    }, { id: dto.user_name + requestId, action: actionName, dtoType }); // ← truyền dtoType vào meta
 }
 
 // =========================
 // handleRequest
 // =========================
 
-async function handleRequest(req, res, actionName, TriggerClass, requestId, startTime) {
+async function handleRequest(req, res, actionName, TriggerClass, requestId, startTime, currentDtoType) {
     const dto = req.body;
 
     let page;
@@ -383,17 +385,14 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             });
         }
 
-        // ── ContextFactory ────────────────────────────────────────────────
         resultFactory = await measure(requestTrace, 'ContextFactory.create', async () => {
             return await ContextFactory.create(dto);
         });
 
-        // ── Trigger ───────────────────────────────────────────────────────
         trigger = await measure(requestTrace, `new ${TriggerClass.name}`, async () => {
             return new TriggerClass(resultFactory.social);
         });
 
-        // Twitter: page = undefined → TwitterSocial.post/twCrawler tự gọi createEventPage từ pool
         const result = await measure(requestTrace, `${TriggerClass.name}.execute`, async () => {
             return await trigger.execute(dto, page);
         });
@@ -452,13 +451,21 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
 
     } finally {
         if (page) {
-            await measure(requestTrace, 'closeEventPage[finally]', async () => {
-                if (!isFacebook && !isTwitter) {
-                    await SessionManager.closeEventPage(page);
-                } else {
-                    await SessionManager.restoreRootOnly();
-                }
-            });
+            if (CONTEXT_MANAGED_TYPES.has(currentDtoType)) {
+                // Close thẳng sau khi xử lý xong
+                await measure(requestTrace, 'closeEventPage[finally][managed]', async () => {
+                        await SessionManager.closeEventPage(page);
+                });
+            } else {
+                // Các type khác — giữ nguyên logic cũ
+                await measure(requestTrace, 'closeEventPage[finally]', async () => {
+                    if (!isFacebook && !isTwitter) {
+                        await SessionManager.closeEventPage(page);
+                    } else {
+                        await SessionManager.restoreRootOnly();
+                    }
+                });
+            }
         }
 
         try {
@@ -539,6 +546,7 @@ router.post('/post_tweet', (req, res) =>
 router.post('/post-profile', (req, res) =>
     enqueueRequest(req, res, 'POST_PROFILE', PostProfileTrigger)
 );
+
 router.post('/partner-post-group', (req, res) =>
     enqueueRequest(req, res, 'PARTNER_POST_GROUP', PartnerPostGroupTrigger)
 );

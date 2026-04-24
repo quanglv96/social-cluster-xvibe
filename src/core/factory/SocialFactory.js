@@ -18,6 +18,8 @@ export class SocialFactory {
             case 'POST_TWITTER':
             case 'CRAWLS_TWITTER':
                 return new TwitterSocial(context);
+            case 'TIKTOK_UPLOAD':
+                return new TwitterSocial(context);
 
             case 'XVIBE_FLOW':
                 return new XvibeSocial(context);

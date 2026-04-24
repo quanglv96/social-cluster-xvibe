@@ -164,8 +164,15 @@ export class SessionManager {
         if (!page) return;
 
         try {
+            const context = page.context();
+
             if (!page.isClosed()) {
                 await page.close();
+            }
+
+            // Chỉ close context nếu không phải context của rootPage
+            if (context !== this.rootPage?.context()) {
+                await context.close();
             }
         } catch (e) {
             logWarn('SESSION', 'cannot close event page', { error: e.message });
