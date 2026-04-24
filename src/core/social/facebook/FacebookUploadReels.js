@@ -109,19 +109,22 @@ export class FacebookUploadReels {
         // 3. Trong composer → tìm đúng nút Thước phim
         const btn = composer
             .locator('div[role="button"][aria-label="Thước phim"]')
-            .filter({ has: page.locator('img[src*="DgIQti9Y0Xv"]') }) // icon reels
+            .filter({ has: page.locator('img[src*="DgIQti9Y0Xv"]') })
             .first();
 
         await btn.waitFor({ state: 'visible', timeout: 10000 });
 
         // 4. Scroll + click chuẩn
         await btn.scrollIntoViewIfNeeded();
-        await btn.click({ delay: 100 });
+        await this.delay.action('before click reels button', page);
+
+        await btn.click({ delay: this.delay.random(80, 200) });
 
         logOk(TAG, `Clicked Reels button`, { url: page.url() });
 
         // 5. Đợi modal reels xuất hiện
         await page.waitForSelector('div[role="dialog"]', { timeout: 15000 });
+        await this.delay.navigation('after open reels modal', page);
 
         logOk(TAG, `Reels modal opened`);
     }
@@ -130,14 +133,33 @@ export class FacebookUploadReels {
     // STEP 3: Drop video vào giữa màn hình
     // ------------------------------------------------
     async dropVideoFile(page, filePath) {
-        log(TAG, `Uploading via input file`, { filePath });
+        log(TAG, `Uploading via file chooser`, { filePath });
 
-        const input = page.locator('input[type="file"]').first();
+        const modal = page.locator('div[role="dialog"]').last();
 
-        await input.setInputFiles(filePath);
+        // 🔥 target đúng vùng upload
+        const uploadBtn = modal.locator('span:has-text("Thêm video")').first();
 
-        logOk(TAG, `File selected`);
-        await this.sleep(3000);
+        await uploadBtn.waitFor({ state: 'visible', timeout: 15000 });
+
+        // 👉 fake user behavior
+        await this.delay.action('hover upload zone', page);
+        await uploadBtn.hover();
+
+        await this.delay.action('before click upload zone', page);
+
+        const [fileChooser] = await Promise.all([
+            page.waitForEvent('filechooser'),
+            uploadBtn.click({ delay: this.delay.random(50, 150) })
+        ]);
+
+        await this.delay.action('after click upload zone', page);
+
+        await fileChooser.setFiles(filePath);
+
+        await this.delay.upload('after video upload');
+
+        logOk(TAG, `File selected via chooser`);
     }
 
     // ------------------------------------------------
@@ -167,15 +189,17 @@ export class FacebookUploadReels {
                 );
 
                 if (!isDisabled) {
-                    logOk(TAG, `Upload done, clicking Tiếp (1)`, { elapsed: `${Math.round(elapsed / 1000)}s` });
-                    await nextBtn.click();
-                    await this.sleep(1500);
+                    await this.delay.action('before click next (1)', page);
+
+                    await nextBtn.click({ delay: this.delay.random(80, 150) });
+
+                    await this.delay.navigation('after click next (1)', page);
+
+                    logOk(TAG, `Upload done, clicking Tiếp (1)`, {
+                        elapsed: `${Math.round(elapsed / 1000)}s`
+                    });
                     return;
                 }
-            }
-
-            if (elapsed % 15000 < UPLOAD_POLL_MS) {
-                log(TAG, `Still uploading...`, { elapsed: `${Math.round(elapsed / 1000)}s` });
             }
 
             await this.sleep(UPLOAD_POLL_MS);
@@ -197,21 +221,16 @@ export class FacebookUploadReels {
         await editor.waitFor({ state: 'visible', timeout: 15000 });
 
         await editor.click();
-        await this.sleep(400);
+        await this.delay.action('after focus caption', page);
 
-        // Xóa nội dung cũ
-        await page.keyboard.down('Control');
-        await page.keyboard.press('A');
-        await page.keyboard.up('Control');
+        await page.keyboard.press('Control+A');
         await page.keyboard.press('Backspace');
-        await this.sleep(300);
 
-        // Gõ từng ký tự
         for (const char of caption) {
-            await page.keyboard.type(char, { delay: 30 + Math.random() * 50 });
+            await page.keyboard.type(char, { delay: this.delay.random(30, 90) });
         }
 
-        await this.sleep(800);
+        await this.delay.action('after typing caption', page);
         logOk(TAG, `Caption filled`);
     }
 
@@ -221,17 +240,14 @@ export class FacebookUploadReels {
     async clickNext(page) {
         log(TAG, `Clicking Tiếp (2)...`);
 
-        // Tìm button chứa span text "Tiếp" (không phải aria-label vì lần 2 khác DOM)
         const nextBtn = page.locator('div[role="button"]:has(span:has-text("Tiếp"))').last();
         await nextBtn.waitFor({ state: 'visible', timeout: 10000 });
 
-        const isDisabled = await nextBtn.evaluate(el =>
-            el.getAttribute('aria-disabled') === 'true'
-        );
-        if (isDisabled) throw new Error('Tiếp button (2) is disabled');
+        await this.delay.action('before click next (2)', page);
 
-        await nextBtn.click();
-        await this.sleep(1500);
+        await nextBtn.click({ delay: this.delay.random(80, 150) });
+
+        await this.delay.navigation('after click next (2)', page);
 
         logOk(TAG, `Tiếp (2) clicked`);
     }
@@ -245,13 +261,11 @@ export class FacebookUploadReels {
         const postBtn = page.locator('div[role="button"]:has(span:has-text("Đăng"))').last();
         await postBtn.waitFor({ state: 'visible', timeout: 10000 });
 
-        const isDisabled = await postBtn.evaluate(el =>
-            el.getAttribute('aria-disabled') === 'true'
-        );
-        if (isDisabled) throw new Error('Đăng button is disabled');
+        await this.delay.action('before click post', page);
 
-        await postBtn.click();
-        await this.sleep(3000);
+        await postBtn.click({ delay: this.delay.random(100, 200) });
+
+        await this.delay.navigation('after click post', page);
 
         logOk(TAG, `Đăng clicked — reels posted`);
     }

@@ -88,15 +88,15 @@ export const runtimeConfig = JSON.parse(JSON.stringify(config));
 // =============================
 function buildApi(host) {
     return {
-        apiImportImage: `${host}/api/vibe/import-image`,
-        apiUpdatePage: `${host}/api/vibe/update-crawls`,
-        apiUpdateCookie: `${host}/api/vibe/update-cookies`,
-        apiLogError: `${host}/api/vibe/internal/error-fb-crawls`,
-        apiLogCheckPoint: `${host}/api/vibe/internal/log-check-point`,
-        apiRegisterSever: `${host}/api/vibe/register-sever-social`,
-        apiCallbackResponse: `${host}/api/vibe/social-callback`,
-        apiGetVideo: `${host}/api/vibe/reel`,
-        apiNotifyCaptcha: `${host}/api/vibe/internal/notify-captcha`,
+        apiImportImage: `${host}/api/import-image`,
+        apiUpdatePage: `${host}/api/update-crawls`,
+        apiUpdateCookie: `${host}/api/update-cookies`,
+        apiLogError: `${host}/api/internal/error-fb-crawls`,
+        apiLogCheckPoint: `${host}/api/internal/log-check-point`,
+        apiRegisterSever: `${host}/api/register-sever-social`,
+        apiCallbackResponse: `${host}/api/social-callback`,
+        apiGetVideo: `${host}/api/reel`,
+        apiNotifyCaptcha: `${host}/api/internal/notify-captcha`,
     };
 }
 
