@@ -98,15 +98,32 @@ export class FacebookUploadReels {
     // STEP 2: Click nút đăng video trên newsfeed
     // ------------------------------------------------
     async clickVideoPostButton(page) {
-        log(TAG, `Looking for video post button...`);
-        await page.goto('https://www.facebook.com/reels/create', {
-            waitUntil: 'domcontentloaded'
-        });
-        // chờ UI reels thật sự load
-        await page.waitForSelector('text=Thêm video', { timeout: 20000 });
+        log(TAG, `Looking for Reels (Thước phim) button...`);
 
-        logOk(TAG, `Reels uploader ready`);
-        logOk(TAG, `Video post button clicked`, { url: currentUrl });
+        // 1. Scope vào khu vực main feed
+        const main = page.locator('[role="main"]').first();
+
+        // 2. Tìm composer (box tạo bài viết)
+        const composer = main.locator('div:has-text("Bạn đang nghĩ gì")').first();
+
+        // 3. Trong composer → tìm đúng nút Thước phim
+        const btn = composer
+            .locator('div[role="button"][aria-label="Thước phim"]')
+            .filter({ has: page.locator('img[src*="DgIQti9Y0Xv"]') }) // icon reels
+            .first();
+
+        await btn.waitFor({ state: 'visible', timeout: 10000 });
+
+        // 4. Scroll + click chuẩn
+        await btn.scrollIntoViewIfNeeded();
+        await btn.click({ delay: 100 });
+
+        logOk(TAG, `Clicked Reels button`, { url: page.url() });
+
+        // 5. Đợi modal reels xuất hiện
+        await page.waitForSelector('div[role="dialog"]', { timeout: 15000 });
+
+        logOk(TAG, `Reels modal opened`);
     }
 
     // ------------------------------------------------
