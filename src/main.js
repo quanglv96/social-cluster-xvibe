@@ -267,3 +267,62 @@ ipcMain.on('set-headless', (e, val) => {
         serverProcess.send({ type: 'SET_HEADLESS', payload: val });
     }
 });
+
+
+// ── THÊM VÀO CUỐI main.js ──────────────────────────────────────────
+
+// ======================
+// PROFILES
+// ======================
+
+// Đọc danh sách profile từ FB_PROFILES_DIR và gửi xuống renderer
+function sendProfilesToRenderer() {
+    const profilesDir = path.join(app.getPath('userData'), 'fb_profiles');
+
+    try {
+        if (!fs.existsSync(profilesDir)) {
+            mainWindow?.webContents.send('profiles', []);
+            return;
+        }
+
+        const entries = fs.readdirSync(profilesDir, { withFileTypes: true });
+        const profiles = entries
+            .filter(e => e.isDirectory())
+            .map(e => ({
+                name:        e.name,
+                profilePath: path.join(profilesDir, e.name),
+            }));
+
+        mainWindow?.webContents.send('profiles', profiles);
+        log('PROFILES', `sent ${profiles.length} profiles to renderer`);
+
+    } catch (err) {
+        logError('PROFILES', 'failed to read profiles dir', { error: err.message });
+        mainWindow?.webContents.send('profiles', []);
+    }
+}
+
+// Gửi profiles ngay khi window ready
+app.whenReady().then(() => {
+    // (đã có createWindow + startServer ở trên, chỉ thêm dòng này)
+    mainWindow?.webContents.on('did-finish-load', () => {
+        sendProfilesToRenderer();
+    });
+});
+
+// Renderer request refresh danh sách
+ipcMain.on('get-profiles', () => {
+    sendProfilesToRenderer();
+});
+
+// Renderer bấm "Mở" → forward xuống server process
+ipcMain.on('open-profile', (_, profilePath) => {
+    log('PROFILES', `open-profile requested`, { profilePath });
+
+    if (!serverProcess) {
+        logWarn('PROFILES', 'server not running, cannot open profile');
+        return;
+    }
+
+    serverProcess.send({ type: 'OPEN_PROFILE', payload: { profilePath } });
+});

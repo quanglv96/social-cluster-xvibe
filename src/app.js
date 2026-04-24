@@ -340,6 +340,34 @@ process.on('message', async (msg) => {
         log('CONFIG', '🖥️ headless changed', { hide: msg.payload });
         await BrowserManager.setVisibility(msg.payload); // payload=true → ẩn, false → hiện
     }
+
+    if (msg.type === 'OPEN_PROFILE') {
+        const { profilePath } = msg.payload;
+        try {
+            const { BrowserManager } = await import('./core/browser/BrowserManager.js');
+
+            // Mở context (hoặc reuse nếu đã mở)
+            const context = await BrowserManager.newContext(profilePath);
+
+            // Lấy page đầu tiên hoặc tạo mới
+            let page = context.pages()[0];
+            if (!page || page.isClosed()) {
+                page = await context.newPage();
+            }
+
+            // Navigate về facebook.com để kiểm tra
+            await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
+
+            // // Maximize window để dễ nhìn
+            // await BrowserManager.maximizeContext(profilePath);
+
+            process.send?.({ type: 'LOG', data: { type: 'ok', msg: `[PROFILES] ✅ Opened profile: ${profilePath}` } });
+
+        } catch (err) {
+            process.send?.({ type: 'LOG', data: { type: 'error', msg: `[PROFILES] ❌ Failed to open profile: ${err.message}` } });
+        }
+        return;
+    }
 });
 
 // =========================

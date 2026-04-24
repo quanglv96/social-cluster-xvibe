@@ -181,5 +181,36 @@ function updateHeadlessUI() {
         btn.classList.add('btn-headless-on');
     }
 }
+// ======================
+// PROFILES
+// ======================
+ipcRenderer.on('profiles', (_, profiles) => {
+    const el = document.getElementById('profiles');
+    if (!el) return;
+
+    if (!profiles?.length) {
+        el.innerHTML = `<div class="p-empty">No profiles found</div>`;
+        return;
+    }
+
+    el.innerHTML = profiles.map(p => `
+        <div class="profile-item">
+            <span class="profile-name" title="${p.profilePath}">${p.name}</span>
+            <button class="profile-open" onclick="openProfile('${p.profilePath.replace(/\\/g, '\\\\')}')">▶ Open</button>
+        </div>
+    `).join('');
+});
+
+window.openProfile = function(profilePath) {
+    ipcRenderer.send('open-profile', profilePath);
+};
+
+window.refreshProfiles = function() {
+    ipcRenderer.send('get-profiles');
+};
+
+// Load profiles khi khởi động
+ipcRenderer.send('get-profiles');
+
 
 initHeadless();
