@@ -5,6 +5,7 @@ import os from 'os';
 
 import {DelayService} from '../../../services/delay.service.js';
 import {FacebookPostProfile} from "./FacebookPostProfile.js";
+import {logCheckpoint} from "../../../services/logCheckpoint.js";
 
 // =========================
 // Log Utils
@@ -145,27 +146,20 @@ export class FacebookPartnerPostGroup {
                             const el = document.querySelector(
                                 'div[role="dialog"] div[role="textbox"][contenteditable="true"]'
                             );
-
                             if (el) {
                                 el.focus();
-
-                                // clear
                                 el.innerHTML = '';
 
                                 // insert text đúng chuẩn
                                 const lines = text.split('\n');
-
                                 lines.forEach((line, index) => {
                                     const span = document.createElement('span');
                                     span.textContent = line;
                                     el.appendChild(span);
-
                                     if (index < lines.length - 1) {
                                         el.appendChild(document.createElement('br'));
                                     }
                                 });
-
-                                // trigger event giống user
                                 el.dispatchEvent(new InputEvent('input', {bubbles: true}));
                                 el.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true}));
                                 el.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
@@ -181,6 +175,11 @@ export class FacebookPartnerPostGroup {
                         await this.uploadImageFiles(page, tempFiles, TAG);
                     }
 
+                    // ✅ CHECKPOINT 1: Sau khi fill content + upload ảnh, trước khi đăng
+                    await logCheckpoint(page, {
+                        step: 'before_post',
+                        message: `Ready to post partner group ${i + 1}/${groups.length} | ${groupUrl}`,
+                    });
                     const postBtnSelectors = [
                         'div[role="dialog"] div[aria-label="Đăng"]',
                         'div[role="dialog"] div[aria-label="Post"]',
@@ -205,11 +204,30 @@ export class FacebookPartnerPostGroup {
 
                     if (!clicked) throw new Error('Cannot find enabled Post button');
 
-                    await this.delay.navigation('after click post button', page);
+                    // ✅ FIX: Chờ dialog đóng hẳn trước khi sang group tiếp
+                    await page.waitForSelector('div[role="dialog"]', {
+                        state: 'detached',
+                        timeout: 15000
+                    }).catch(() => logWarn(TAG, 'Dialog did not close in time'));
+
+                    // ✅ CHECKPOINT 2: Sau khi đăng xong
+                    await logCheckpoint(page, {
+                        step: 'after_post',
+                        message: `Post partner done - group ${i + 1}/${groups.length} | ${groupUrl}`,
+                    });
                     logOk(TAG, `Post success`, {groupUrl});
 
                 } catch (err) {
                     logError(TAG, `Post failed for group`, err);
+                    // ✅ CHECKPOINT 3: Chụp lại màn hình khi fail để debug
+                    await logCheckpoint(page, {
+                        step: 'post_failed',
+                        message: `Post partner failed - group ${i + 1}/${groups.length} | ${groupUrl} | error: ${err?.message}`,
+                    });
+                    // ✅ FIX: Escape để đóng dialog trước khi goto group tiếp
+                    await page.keyboard.press('Escape').catch(() => {});
+                    await this.delay.action('after escape', page);
+
                     logWarn(TAG, `Skipping group`, {groupUrl});
                 }
 

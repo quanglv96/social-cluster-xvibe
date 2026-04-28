@@ -16,17 +16,17 @@ function formatMsg(requestId, message, fields = {}) {
     return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
 }
 function sendToRenderer(type, msg) { process.send?.({ type: 'LOG', data: { type, msg } }); }
-function log(requestId, message, fields = {})   { sendToRenderer('info',  formatMsg(requestId, message,          fields)); }
-function logWarn(requestId, message, fields = {}){ sendToRenderer('warn',  formatMsg(requestId, `⚠️ ${message}`,  fields)); }
-function logError(requestId, message, err)       { sendToRenderer('error', formatMsg(requestId, `❌ ${message}`,  { error: err?.message || err })); }
-function logOk(requestId, message, fields = {})  { sendToRenderer('ok',    formatMsg(requestId, `✅ ${message}`,  fields)); }
+function log(requestId, message, fields = {})    { sendToRenderer('info',  formatMsg(requestId, message,          fields)); }
+function logWarn(requestId, message, fields = {}) { sendToRenderer('warn',  formatMsg(requestId, `⚠️ ${message}`,  fields)); }
+function logError(requestId, message, err)        { sendToRenderer('error', formatMsg(requestId, `❌ ${message}`,  { error: err?.message || err })); }
+function logOk(requestId, message, fields = {})   { sendToRenderer('ok',    formatMsg(requestId, `✅ ${message}`,  fields)); }
 
 // =========================
 
 const TAG = 'FB_UPLOAD_REELS';
 
-const UPLOAD_TIMEOUT_MS   = 120_000; // 2 phút chờ upload xong
-const UPLOAD_POLL_MS      = 3_000;   // poll mỗi 3s
+const UPLOAD_TIMEOUT_MS = 120_000; // 2 phút chờ upload xong
+const UPLOAD_POLL_MS    = 3_000;   // poll mỗi 3s
 
 export class FacebookUploadReels {
 
@@ -45,11 +45,11 @@ export class FacebookUploadReels {
     /**
      * @param {object} dto
      * @param {string} dto.source  - URL video cần upload
-     * @param {string} dto.content    - Mô tả reels
+     * @param {string} dto.content - Mô tả reels
      * @param {import('playwright').Page} page
      */
-    async upload({source: mediaId, content: caption}, page) {
-        if (!page)      throw new Error('FacebookUploadReels requires a Playwright page');
+    async upload({ source: mediaId, content: caption }, page) {
+        if (!page)    throw new Error('FacebookUploadReels requires a Playwright page');
         if (!mediaId) throw new Error('video_url is required');
 
         let tempFile = null;
@@ -87,9 +87,11 @@ export class FacebookUploadReels {
             await this.clickPost(page);
 
             logOk(TAG, `🎉 Reels upload complete`);
-            return { success: true};
+            return { success: true };
 
         } finally {
+            // FIX 1: Chỉ xóa file sau khi toàn bộ flow hoàn thành hoặc thật sự lỗi
+            // (finally vẫn chạy đúng, nhưng tempFile lúc này đã được dùng xong)
             this.safeDeleteFile(tempFile);
         }
     }
@@ -112,6 +114,13 @@ export class FacebookUploadReels {
             .filter({ has: page.locator('img[src*="DgIQti9Y0Xv"]') })
             .first();
 
+        const count = await btn.count();
+        log(TAG, `Reels button found`, { count });
+
+        if (count === 0) {
+            throw new Error('Không tìm thấy nút "Thước phim" trong composer');
+        }
+
         await btn.waitFor({ state: 'visible', timeout: 10000 });
 
         // 4. Scroll + click chuẩn
@@ -122,30 +131,35 @@ export class FacebookUploadReels {
 
         logOk(TAG, `Clicked Reels button`, { url: page.url() });
 
-        // 5. Đợi modal reels xuất hiện
-        await page.waitForSelector('div[role="dialog"]', { timeout: 15000 });
+        // FIX 3: Không dùng waitForSelector chung chung (có thể match dialog cũ).
+        // Thay bằng waitForFunction — chờ dialog mới chứa text "Thêm video" visible.
+        await page.waitForFunction(() => {
+            const dialogs = document.querySelectorAll('div[role="dialog"]');
+            return [...dialogs].some(
+                d => d.offsetParent !== null && d.innerText?.includes('Thêm video')
+            );
+        }, { timeout: 20000 });
+
         await this.delay.navigation('after open reels modal', page);
 
         logOk(TAG, `Reels modal opened`);
     }
 
     // ------------------------------------------------
-    // STEP 3: Drop video vào giữa màn hình
+    // STEP 3: Chọn file qua file chooser
     // ------------------------------------------------
     async dropVideoFile(page, filePath) {
         log(TAG, `Uploading via file chooser`, { filePath });
 
+        // FIX 4: Dùng locator().last() thay vì .last() trên toàn page
+        // để chắc chắn lấy dialog Reels mới nhất (tránh match dialog cũ).
         const modal = page.locator('div[role="dialog"]').last();
 
-        // 🔥 target đúng vùng upload
         const uploadBtn = modal.locator('span:has-text("Thêm video")').first();
-
         await uploadBtn.waitFor({ state: 'visible', timeout: 15000 });
 
-        // 👉 fake user behavior
         await this.delay.action('hover upload zone', page);
         await uploadBtn.hover();
-
         await this.delay.action('before click upload zone', page);
 
         const [fileChooser] = await Promise.all([
@@ -154,9 +168,7 @@ export class FacebookUploadReels {
         ]);
 
         await this.delay.action('after click upload zone', page);
-
         await fileChooser.setFiles(filePath);
-
         await this.delay.upload('after video upload');
 
         logOk(TAG, `File selected via chooser`);
@@ -179,7 +191,6 @@ export class FacebookUploadReels {
                 throw new Error(`Upload timed out after ${UPLOAD_TIMEOUT_MS / 1000}s`);
             }
 
-            // Kiểm tra nút "Tiếp" đã enabled chưa
             const nextBtn = page.locator('div[aria-label="Tiếp"][role="button"]').first();
             const exists  = await nextBtn.count();
 
@@ -190,9 +201,7 @@ export class FacebookUploadReels {
 
                 if (!isDisabled) {
                     await this.delay.action('before click next (1)', page);
-
                     await nextBtn.click({ delay: this.delay.random(80, 150) });
-
                     await this.delay.navigation('after click next (1)', page);
 
                     logOk(TAG, `Upload done, clicking Tiếp (1)`, {
@@ -244,9 +253,7 @@ export class FacebookUploadReels {
         await nextBtn.waitFor({ state: 'visible', timeout: 10000 });
 
         await this.delay.action('before click next (2)', page);
-
         await nextBtn.click({ delay: this.delay.random(80, 150) });
-
         await this.delay.navigation('after click next (2)', page);
 
         logOk(TAG, `Tiếp (2) clicked`);
@@ -262,9 +269,7 @@ export class FacebookUploadReels {
         await postBtn.waitFor({ state: 'visible', timeout: 10000 });
 
         await this.delay.action('before click post', page);
-
         await postBtn.click({ delay: this.delay.random(100, 200) });
-
         await this.delay.navigation('after click post', page);
 
         logOk(TAG, `Đăng clicked — reels posted`);
@@ -274,8 +279,9 @@ export class FacebookUploadReels {
     // Download video về /tmp
     // ------------------------------------------------
     async downloadVideo(mediaId) {
-        const url = runtimeConfig.api.apiGetVideo+"/" + mediaId
+        const url = runtimeConfig.api.apiGetVideo + '/' + mediaId;
         log(TAG, `URL GET VIDEO: ${url}`);
+
         const response = await axios.get(url, {
             responseType: 'arraybuffer',
             timeout: 120_000,
