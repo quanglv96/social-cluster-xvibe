@@ -342,7 +342,8 @@ process.on('message', async (msg) => {
     }
 
     if (msg.type === 'OPEN_PROFILE') {
-        const { profilePath } = msg.payload;
+
+        const { profilePath, type } = msg.payload;
         try {
             const { BrowserManager } = await import('./core/browser/BrowserManager.js');
 
@@ -354,12 +355,12 @@ process.on('message', async (msg) => {
             if (!page || page.isClosed()) {
                 page = await context.newPage();
             }
+            const targetUrl =
+                type === 'twitter'
+                    ? 'https://x.com/'
+                    : 'https://www.facebook.com/';
 
-            // Navigate về facebook.com để kiểm tra
-            await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
-
-            // // Maximize window để dễ nhìn
-            // await BrowserManager.maximizeContext(profilePath);
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
             process.send?.({ type: 'LOG', data: { type: 'ok', msg: `[PROFILES] ✅ Opened profile: ${profilePath}` } });
 

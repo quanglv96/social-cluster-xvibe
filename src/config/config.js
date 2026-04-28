@@ -143,7 +143,6 @@ export function updateConfig(newConfig = {}) {
     if (changed) {
         persistConfig({
             host: runtimeConfig.host,
-            // rootUrl: runtimeConfig.rootUrl
         });
     }
 

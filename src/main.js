@@ -5,6 +5,7 @@ import {fileURLToPath} from 'url';
 import {fork} from 'child_process';
 import {setupGlobalErrorHandler} from "./config/globalErrorHandler.js";
 import fs from 'fs';
+import {runtimeConfig} from "./config/config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,7 +119,6 @@ function startServer() {
                 RUNTIME_CONFIG_PATH: path.join(userDataPath, 'config.runtime.json'),
                 PORTABLE_EXECUTABLE_DIR: process.env.PORTABLE_EXECUTABLE_DIR
                     || path.dirname(process.execPath),
-                FB_PROFILES_DIR: path.join(userDataPath, 'fb_profiles'), // ← AppData, an toàn
                 HEADLESS: String(HEADLESS),   // ✅ truyền xuống child process
             }
         }
@@ -277,28 +277,42 @@ ipcMain.on('set-headless', (e, val) => {
 
 // Đọc danh sách profile từ FB_PROFILES_DIR và gửi xuống renderer
 function sendProfilesToRenderer() {
-    const profilesDir = path.join(app.getPath('userData'), 'fb_profiles');
-
+    const fbDir = runtimeConfig.facebookProfileDir;
+    const twitterDir = runtimeConfig.twitterProfileDir;
     try {
-        if (!fs.existsSync(profilesDir)) {
-            mainWindow?.webContents.send('profiles', []);
-            return;
-        }
+        const fbProfiles = readProfilesFromDir(fbDir, 'facebook');
+        const twitterProfiles = readProfilesFromDir(twitterDir, 'twitter');
 
-        const entries = fs.readdirSync(profilesDir, { withFileTypes: true });
-        const profiles = entries
-            .filter(e => e.isDirectory())
-            .map(e => ({
-                name:        e.name,
-                profilePath: path.join(profilesDir, e.name),
-            }));
+        const profiles = [...fbProfiles, ...twitterProfiles];
+        log('PROFILES', `sent ${profiles.length} profiles ...`);
 
         mainWindow?.webContents.send('profiles', profiles);
-        log('PROFILES', `sent ${profiles.length} profiles to renderer`);
+
+        log('PROFILES', `sent ${profiles.length} profiles (fb: ${fbProfiles.length}, twitter: ${twitterProfiles.length})`);
 
     } catch (err) {
-        logError('PROFILES', 'failed to read profiles dir', { error: err.message });
+        logError('PROFILES', 'failed to read profiles', { error: err.message });
         mainWindow?.webContents.send('profiles', []);
+    }
+}
+
+function readProfilesFromDir(baseDir, type) {
+    try {
+        if (!fs.existsSync(baseDir)) return [];
+
+        const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+
+        return entries
+            .filter(e => e.isDirectory())
+            .map(e => ({
+                name: e.name,
+                profilePath: path.join(baseDir, e.name),
+                type:type // 'facebook' | 'twitter'
+            }));
+
+    } catch (err) {
+        logError('PROFILES', 'failed to read dir', { dir: baseDir, error: err.message });
+        return [];
     }
 }
 
@@ -316,13 +330,14 @@ ipcMain.on('get-profiles', () => {
 });
 
 // Renderer bấm "Mở" → forward xuống server process
-ipcMain.on('open-profile', (_, profilePath) => {
-    log('PROFILES', `open-profile requested`, { profilePath });
+ipcMain.on('open-profile', (_, payload) => {
+    const { profilePath, type } = payload;
+    log('PROFILES', `open-profile requested`, { profilePath, type });
 
     if (!serverProcess) {
         logWarn('PROFILES', 'server not running, cannot open profile');
         return;
     }
 
-    serverProcess.send({ type: 'OPEN_PROFILE', payload: { profilePath } });
+    serverProcess.send({ type: 'OPEN_PROFILE', payload: { profilePath, type }});
 });

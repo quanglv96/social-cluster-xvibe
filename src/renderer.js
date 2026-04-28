@@ -1,23 +1,23 @@
-const { ipcRenderer } = require('electron');
+const {ipcRenderer} = require('electron');
 
 // ======================
 // LOG
 // ======================
 const LOG_ICON = {
-    info:  { icon: 'ℹ',  cls: 'log-info'  },
-    warn:  { icon: '⚠',  cls: 'log-warn'  },
-    error: { icon: '✖',  cls: 'log-error' },
-    ok:    { icon: '✔',  cls: 'log-ok'    },
+    info: {icon: 'ℹ', cls: 'log-info'},
+    warn: {icon: '⚠', cls: 'log-warn'},
+    error: {icon: '✖', cls: 'log-error'},
+    ok: {icon: '✔', cls: 'log-ok'},
 };
 
-function appendLog({ type = 'info', msg = '' }) {
+function appendLog({type = 'info', msg = ''}) {
     const logEl = document.getElementById('log');
-    const meta  = LOG_ICON[type] ?? LOG_ICON.info;
+    const meta = LOG_ICON[type] ?? LOG_ICON.info;
 
     let ts = '', body = msg;
     const tsMatch = msg.match(/^\[([^\]]+)\]\s*/);
     if (tsMatch) {
-        ts   = tsMatch[1].slice(11, 19); // HH:mm:ss
+        ts = tsMatch[1].slice(11, 19); // HH:mm:ss
         body = msg.slice(tsMatch[0].length);
     }
 
@@ -36,35 +36,35 @@ function appendLog({ type = 'info', msg = '' }) {
 // ======================
 // CONTROL
 // ======================
-window.start   = () => ipcRenderer.send("control", "start");
-window.stop    = () => ipcRenderer.send("control", "stop");
+window.start = () => ipcRenderer.send("control", "start");
+window.stop = () => ipcRenderer.send("control", "stop");
 window.restart = () => ipcRenderer.send("control", "restart");
 
 window.save = () => {
     const host = document.getElementById("hostUrl").value;
-    ipcRenderer.send("update-config", { host });
+    ipcRenderer.send("update-config", {host});
 };
 
 // ======================
 // RECEIVE DATA
 // ======================
 ipcRenderer.on("log", (_, payload) => {
-    if (typeof payload === 'string') return appendLog({ type: 'info', msg: payload });
+    if (typeof payload === 'string') return appendLog({type: 'info', msg: payload});
     appendLog(payload);
 });
 
 ipcRenderer.on("stats", (_, data) => {
-    document.getElementById("cpu").innerText    = data.cpu + "%";
+    document.getElementById("cpu").innerText = data.cpu + "%";
     document.getElementById("memory").innerText = data.memory + " MB";
-    document.getElementById("req").innerText    = data.requests;
-    document.getElementById("error").innerText  = data.error;
+    document.getElementById("req").innerText = data.requests;
+    document.getElementById("error").innerText = data.error;
 });
 
 // ======================
 // STATUS
 // ======================
 ipcRenderer.on("status", (_, status) => {
-    const dot  = document.getElementById("dot");
+    const dot = document.getElementById("dot");
     const text = document.getElementById("status-text");
 
     text.innerText = status;
@@ -80,10 +80,10 @@ ipcRenderer.on("status", (_, status) => {
 // QUEUE
 // ======================
 const Q_META = {
-    PENDING:    { icon: '⏳', cls: 'q-pending'    },
-    PROCESSING: { icon: '⚡', cls: 'q-processing' },
-    SUCCESS:    { icon: '✔',  cls: 'q-success'    },
-    ERROR:      { icon: '✖',  cls: 'q-error'      },
+    PENDING: {icon: '⏳', cls: 'q-pending'},
+    PROCESSING: {icon: '⚡', cls: 'q-processing'},
+    SUCCESS: {icon: '✔', cls: 'q-success'},
+    ERROR: {icon: '✖', cls: 'q-error'},
 };
 
 ipcRenderer.on("queue", (_, items) => {
@@ -107,7 +107,7 @@ ipcRenderer.on("queue", (_, items) => {
 
     items.forEach(item => {
         const meta = Q_META[item.status] ?? Q_META.PENDING;
-        const dur  = item.duration === null
+        const dur = item.duration === null
             ? '-'
             : item.duration < 1000
                 ? item.duration + 'ms'
@@ -117,7 +117,7 @@ ipcRenderer.on("queue", (_, items) => {
 
         if (!row) {
             row = document.createElement('div');
-            row.id        = `qi-${item.id}`;
+            row.id = `qi-${item.id}`;
             row.className = 'queue-item';
             el.appendChild(row);
         }
@@ -132,10 +132,12 @@ ipcRenderer.on("queue", (_, items) => {
         // Fade-out khi SUCCESS / ERROR, reset khi PENDING/PROCESSING
         if (item.status === 'SUCCESS' || item.status === 'ERROR') {
             row.style.transition = 'opacity 4.5s ease';
-            requestAnimationFrame(() => { row.style.opacity = '0.25'; });
+            requestAnimationFrame(() => {
+                row.style.opacity = '0.25';
+            });
         } else {
             row.style.transition = 'none';
-            row.style.opacity    = '1';
+            row.style.opacity = '1';
         }
     });
 });
@@ -146,7 +148,6 @@ async function loadVersion() {
 }
 
 loadVersion();
-
 
 
 // ===========UPDATE HEADLESS READTIME=============
@@ -166,7 +167,7 @@ window.toggleHeadless = function () {
 };
 
 function updateHeadlessUI() {
-    const btn   = document.getElementById('btn-headless');
+    const btn = document.getElementById('btn-headless');
     const state = document.getElementById('headless-state');
 
     if (HEADLESS) {
@@ -181,6 +182,7 @@ function updateHeadlessUI() {
         btn.classList.add('btn-headless-on');
     }
 }
+
 // ======================
 // PROFILES
 // ======================
@@ -194,18 +196,23 @@ ipcRenderer.on('profiles', (_, profiles) => {
     }
 
     el.innerHTML = profiles.map(p => `
-        <div class="profile-item">
-            <span class="profile-name" title="${p.profilePath}">${p.name}</span>
-            <button class="profile-open" onclick="openProfile('${p.profilePath.replace(/\\/g, '\\\\')}')">▶ Open</button>
-        </div>
-    `).join('');
+    <div class="profile-item">
+        <span class="profile-name" title="${p.profilePath}">
+            [${p.type}] ${p.name}
+        </span>
+        <button class="profile-open"
+            onclick="openProfile('${p.profilePath.replace(/\\/g, '\\\\')}', '${p.type}')">
+            ▶ Open
+        </button>
+    </div>
+`).join('');
 });
 
-window.openProfile = function(profilePath) {
-    ipcRenderer.send('open-profile', profilePath);
+window.openProfile = function (profilePath, type) {
+    ipcRenderer.send('open-profile', {profilePath, type});
 };
 
-window.refreshProfiles = function() {
+window.refreshProfiles = function () {
     ipcRenderer.send('get-profiles');
 };
 
