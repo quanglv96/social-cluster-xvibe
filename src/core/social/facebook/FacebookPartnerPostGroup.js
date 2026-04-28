@@ -127,7 +127,6 @@ export class FacebookPartnerPostGroup {
                     await this.delay.action('after focus textbox', page);
 
                     try {
-                        // cấp quyền clipboard
                         await this.context.grantPermissions(['clipboard-read', 'clipboard-write']);
                         await page.evaluate(async (text) => {
                             await navigator.clipboard.writeText(text);
@@ -136,6 +135,7 @@ export class FacebookPartnerPostGroup {
                         await page.keyboard.press('Control+A');
                         await page.keyboard.press('Backspace');
                         await page.keyboard.press('Control+V');
+                        await page.keyboard.press('Space'); // ✅ thêm space sau khi paste xong
 
                         log(TAG, 'Content pasted via clipboard');
 
@@ -150,7 +150,6 @@ export class FacebookPartnerPostGroup {
                                 el.focus();
                                 el.innerHTML = '';
 
-                                // insert text đúng chuẩn
                                 const lines = text.split('\n');
                                 lines.forEach((line, index) => {
                                     const span = document.createElement('span');
@@ -165,6 +164,9 @@ export class FacebookPartnerPostGroup {
                                 el.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
                             }
                         }, content);
+
+                        // ✅ thêm space sau khi JS inject xong
+                        await page.keyboard.press('Space');
                     }
 
                     log(TAG, `Content filled`);
