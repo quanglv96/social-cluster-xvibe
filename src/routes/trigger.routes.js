@@ -269,7 +269,7 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
 
     const callbackUrl = runtimeConfig.api.apiCallbackResponse;
     const dtoType = dto.type || actionName;
-
+    const executionId = buildRequestId(actionName);
     QUEUE_SIZE++;
     TOTAL_REQUESTS++;
     _resetIdleTimer();
@@ -330,7 +330,7 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
             const closingSeparator = '='.repeat(80);
             sendToRenderer('info', closingSeparator);
         }
-    }, { id: dto.user_name + requestId, action: actionName, dtoType }); // ← truyền dtoType vào meta
+    }, { id: executionId, action: actionName, dtoType }); // ← truyền dtoType vào meta
 }
 
 // =========================

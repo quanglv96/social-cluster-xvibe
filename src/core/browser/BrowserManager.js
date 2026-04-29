@@ -86,6 +86,7 @@ export class BrowserManager {
         log('BROWSER', '🚀 launching profile context', { profile: profilePath });
 
         const context = await chromium.launchPersistentContext(profilePath, {
+            channel: 'chrome', // 🔥 dùng Chrome thật
             headless: false,       // luôn false — visibility điều khiển bằng CDP off-screen
             args: STEALTH_ARGS,
             viewport:   { width: 1366, height: 768 },
