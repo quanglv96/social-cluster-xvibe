@@ -6,6 +6,7 @@ import {fork} from 'child_process';
 import {setupGlobalErrorHandler} from "./config/globalErrorHandler.js";
 import fs from 'fs';
 import {runtimeConfig} from "./config/config.js";
+import {setupAutoUpdater} from "./updater.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -243,6 +244,10 @@ app.whenReady().then(() => {
     clearRuntimeConfigIfVersionChanged();
     createWindow();
     startServer();
+    // ✅ Thêm dòng này
+    mainWindow.webContents.on('did-finish-load', () => {
+        setupAutoUpdater(mainWindow);
+    });
 });
 
 app.on('window-all-closed', () => {

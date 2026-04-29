@@ -63,7 +63,7 @@ export class BrowserManager {
 
     static async #launchBrowser() {
         log('BROWSER', '🚀 launching root browser');
-        const instance = await chromium.launch({
+        const instance = await chromium.launchPersistentContext({
             headless: false,
             args: STEALTH_ARGS,
         });
@@ -86,7 +86,6 @@ export class BrowserManager {
         log('BROWSER', '🚀 launching profile context', { profile: profilePath });
 
         const context = await chromium.launchPersistentContext(profilePath, {
-            channel: 'chrome', // 🔥 dùng Chrome thật
             headless: false,       // luôn false — visibility điều khiển bằng CDP off-screen
             args: STEALTH_ARGS,
             viewport:   { width: 1366, height: 768 },
@@ -101,7 +100,7 @@ export class BrowserManager {
             logWarn('BROWSER', 'profile context closed', { profile: profilePath });
             activeContexts.delete(profilePath);
         });
-
+        await new Promise(r => setTimeout(r, 300));
         // Apply visibility cho page mặc định ngay khi launch
         await BrowserManager.#applyVisibilityToContext(context, profilePath);
 
@@ -175,13 +174,28 @@ export class BrowserManager {
     // HEADLESS=false → on-screen  (hiện, không steal focus)
     static async #moveWindow(page) {
         try {
-            const session = await page.context().newCDPSession(page);
+            if (!page || page.isClosed()) return;
+
+            const context = page.context();
+
+            if (!context || context._closed) return;
+
+            // SAFE attach
+            let session;
+            try {
+                session = await context.newCDPSession(page);
+            } catch {
+                return;
+            }
+
             const { windowId } = await session.send('Browser.getWindowForTarget');
+
             await session.send('Browser.setWindowBounds', {
                 windowId,
                 bounds: HEADLESS ? OFFSCREEN : ONSCREEN,
             });
-            await session.detach();
+
+            await session.detach?.();
         } catch (err) {
             logWarn('BROWSER', 'CDP moveWindow failed', { error: err.message });
         }
