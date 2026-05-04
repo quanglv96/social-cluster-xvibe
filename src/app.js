@@ -368,6 +368,17 @@ process.on('message', async (msg) => {
         }
         return;
     }
+
+    if (msg.type === 'CLOSE_PROFILE') {
+        const { profilePath } = msg.payload;
+        try {
+            await BrowserManager.closeContext(profilePath);
+            log('PROFILES', '✅ context closed before delete', { profilePath });
+        } catch (err) {
+            logWarn('PROFILES', 'close context error', { error: err.message });
+        }
+        return;
+    }
 });
 
 // =========================
@@ -397,5 +408,7 @@ setInterval(() => {
     sendToUI('queue', getQueueItems());
 
 }, 1000);
+
+
 
 bootstrap();

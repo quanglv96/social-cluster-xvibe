@@ -186,6 +186,9 @@ function updateHeadlessUI() {
 // ======================
 // PROFILES
 // ======================
+// ======================
+// PROFILES
+// ======================
 ipcRenderer.on('profiles', (_, profiles) => {
     const el = document.getElementById('profiles');
     if (!el) return;
@@ -204,9 +207,19 @@ ipcRenderer.on('profiles', (_, profiles) => {
             onclick="openProfile('${p.profilePath.replace(/\\/g, '\\\\')}', '${p.type}')">
             ▶ Open
         </button>
+        <button class="profile-delete"
+            onclick="deleteProfile('${p.profilePath.replace(/\\/g, '\\\\')}', '${p.name}')">
+            ✖
+        </button>
     </div>
 `).join('');
 });
+
+window.deleteProfile = function (profilePath, name) {
+    const confirmed = confirm(`Xóa profile "${name}"?\nThư mục sẽ bị xóa vĩnh viễn.`);
+    if (!confirmed) return;
+    ipcRenderer.send('delete-profile', { profilePath });
+};
 
 window.openProfile = function (profilePath, type) {
     ipcRenderer.send('open-profile', {profilePath, type});

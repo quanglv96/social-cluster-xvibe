@@ -349,6 +349,33 @@ ipcMain.on('open-profile', (_, payload) => {
     serverProcess.send({type: 'OPEN_PROFILE', payload: {profilePath, type}});
 });
 
+// Renderer bấm "Xóa" → xóa thư mục profile
+ipcMain.on('delete-profile', (_, { profilePath }) => {
+    log('PROFILES', `delete-profile requested`, { profilePath });
+
+    try {
+        // ✅ Đóng context nếu đang mở
+        if (serverProcess) {
+            serverProcess.send({ type: 'CLOSE_PROFILE', payload: { profilePath } });
+        }
+
+        // Chờ 500ms để context đóng xong rồi mới xóa
+        setTimeout(() => {
+            try {
+                fs.rmSync(profilePath, { recursive: true, force: true });
+                log('PROFILES', `✅ deleted profile`, { profilePath });
+                // Refresh lại danh sách
+                sendProfilesToRenderer();
+            } catch (err) {
+                logError('PROFILES', `failed to delete profile`, { error: err.message });
+            }
+        }, 500);
+
+    } catch (err) {
+        logError('PROFILES', `delete-profile error`, { error: err.message });
+    }
+});
+
 // main.js
 ipcMain.on('install-update', () => {
     autoUpdater.quitAndInstall(false, true);
