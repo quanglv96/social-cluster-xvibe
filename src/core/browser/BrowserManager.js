@@ -10,28 +10,24 @@ function formatMsg(module, message, fields = {}) {
     return `[${nowIso()}] [${module}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
 }
 function sendToRenderer(type, msg) { process.send?.({ type: 'LOG', data: { type, msg } }); }
-function log(module, message, fields = {})     { sendToRenderer('info',  formatMsg(module, message,         fields)); }
-function logWarn(module, message, fields = {}) { sendToRenderer('warn',  formatMsg(module, `⚠️ ${message}`, fields)); }
-function logError(module, message, fields = {}){ sendToRenderer('error', formatMsg(module, `❌ ${message}`, fields)); }
-function logOk(module, message, fields = {})   { sendToRenderer('ok',    formatMsg(module, `✅ ${message}`, fields)); }
+function log(module, message, fields = {})      { sendToRenderer('info',  formatMsg(module, message,          fields)); }
+function logWarn(module, message, fields = {})  { sendToRenderer('warn',  formatMsg(module, `⚠️ ${message}`,  fields)); }
+function logError(module, message, fields = {}) { sendToRenderer('error', formatMsg(module, `❌ ${message}`,  fields)); }
+function logOk(module, message, fields = {})    { sendToRenderer('ok',    formatMsg(module, `✅ ${message}`,  fields)); }
 
 // =========================
 // State
 // =========================
-export let HEADLESS = true; // true = ẩn (off-screen), false = hiện
-
+export let HEADLESS = true;
 export function setHeadless(val) { HEADLESS = val; }
 
 let browser   = null;
 let launching = null;
-
-const activeContexts = new Map(); // profilePath → BrowserContext
+const activeContexts = new Map();
 
 // =========================
-// Args
+// Args — KHÔNG có remote-debugging-port, không có window-position
 // =========================
-
-
 const STEALTH_ARGS = [
     '--disable-blink-features=AutomationControlled',
     '--no-sandbox',
@@ -39,13 +35,11 @@ const STEALTH_ARGS = [
     '--disable-dev-shm-usage',
     '--no-first-run',
     '--no-default-browser-check',
-    // 🔥 Ẩn khỏi taskbar Windows
     '--disable-infobars',
-    '--remote-debugging-port=0',  // ✅ thêm dòng này — dùng port thay vì pipe
 ];
 
 const OFFSCREEN = { left: -32000, top: -32000, width: 1366, height: 768, windowState: 'normal' };
-const ONSCREEN  = { left: 100,    top: 100,    width: 1366, height: 768, windowState: 'normal' };
+const ONSCREEN  = { windowState: 'maximized' };
 
 // =========================
 export class BrowserManager {
@@ -68,20 +62,25 @@ export class BrowserManager {
             headless: false,
             args: STEALTH_ARGS,
         });
-        instance.on('disconnected', () => { logWarn('BROWSER', 'root browser disconnected'); browser = null; });
+        instance.on('disconnected', () => {
+            logWarn('BROWSER', 'root browser disconnected');
+            browser = null;
+        });
         logOk('BROWSER', 'root browser launched');
         return instance;
     }
-
+    static getActiveContextCount() {
+        return activeContexts.size;
+    }
     // =========================
     // PERSISTENT CONTEXT (per profile)
     // =========================
     static async newContext(profilePath) {
-        // ✅ Kiểm tra profile path
+        if (!profilePath) throw new Error('[BrowserManager] profilePath is required');
+
         if (!fs.existsSync(profilePath)) {
             throw new Error(`Profile path does not exist: ${profilePath}`);
         }
-        if (!profilePath) throw new Error('[BrowserManager] profilePath is required');
 
         if (activeContexts.has(profilePath)) {
             log('BROWSER', 'reusing existing context', { profile: profilePath });
@@ -92,11 +91,11 @@ export class BrowserManager {
 
         const context = await chromium.launchPersistentContext(profilePath, {
             headless: false,
-            channel: undefined,   // ✅ không dùng edge, dùng playwright chromium
             args: STEALTH_ARGS,
             locale:     'vi-VN',
             timezoneId: 'Asia/Ho_Chi_Minh',
-            viewport: null, // 🔥 QUAN TRỌNG → full theo window
+            viewport:   null,  // full theo window size
+            timeout:    30000,
         });
 
         activeContexts.set(profilePath, context);
@@ -106,11 +105,7 @@ export class BrowserManager {
             activeContexts.delete(profilePath);
         });
 
-        // ✅ Chờ page đầu tiên ready thay vì delay cứng
-        if (!context.pages().length) {
-            await context.waitForEvent('page', { timeout: 5000 }).catch(() => {});
-        }
-
+        // Apply visibility ngay sau launch
         await BrowserManager.#applyVisibilityToContext(context, profilePath);
 
         logOk('BROWSER', 'profile context ready', { profile: profilePath });
@@ -134,95 +129,68 @@ export class BrowserManager {
     }
 
     // =========================
-    // SET VISIBILITY — realtime, không restart
+    // SET VISIBILITY — realtime toggle ẩn/hiện
+    // Gọi từ main.js khi nhận SET_HEADLESS
+    // HEADLESS=true  → ẩn (off-screen)
+    // HEADLESS=false → hiện (maximized)
     // =========================
-    static async setVisibility(hide) {
-        HEADLESS = hide;
-        log('BROWSER', '🖥️ setVisibility', { hide, contexts: activeContexts.size });
+    static async setVisibility(headless) {
+        HEADLESS = headless;
+        log('BROWSER', '🖥️ setVisibility', { headless, contexts: activeContexts.size });
 
+        const tasks = [];
+
+        // Apply cho tất cả profile contexts
         for (const [profilePath, context] of activeContexts) {
-            try {
-                await BrowserManager.#applyVisibilityToContext(context, profilePath);
-            } catch (err) {
-                logError('BROWSER', 'setVisibility failed', { profile: profilePath, error: err.message });
-            }
+            tasks.push(
+                BrowserManager.#applyVisibilityToContext(context, profilePath)
+                    .catch(err => logError('BROWSER', 'setVisibility failed', {
+                        profile: profilePath,
+                        error: err.message
+                    }))
+            );
         }
 
-        if (browser?.isConnected()) {
-            for (const ctx of browser.contexts()) {
-                for (const page of ctx.pages()) {
-                    await BrowserManager.#moveWindow(page);
-                }
-            }
-        }
+        await Promise.all(tasks);
+        log('BROWSER', '🖥️ setVisibility done', { headless });
     }
 
     // =========================
-    // PUBLIC: apply cho 1 page mới tạo
-    // Pool gọi ngay sau context.newPage() để tránh flash lên màn hình
+    // PUBLIC: gọi ngay sau newPage() để tránh flash
     // =========================
     static async applyVisibilityToPage(page) {
         await BrowserManager.#moveWindow(page);
     }
 
     // =========================
-    // INTERNAL
+    // INTERNAL: apply cho toàn bộ pages trong 1 context
     // =========================
     static async #applyVisibilityToContext(context, profilePath = '?') {
-        const start = Date.now();
+        // Chờ page xuất hiện tối đa 5s
         let pages = context.pages();
 
-        // 🔥 wait page xuất hiện (tối đa ~3s)
         if (!pages.length) {
             try {
-                const page = await context.waitForEvent('page', { timeout: 3000 });
-                pages = [page];
-            } catch (_) {
-                // fallback → check lại lần cuối
+                await context.waitForEvent('page', { timeout: 5000 });
+                pages = context.pages();
+            } catch {
                 pages = context.pages();
             }
         }
 
         if (!pages.length) {
-            logWarn('BROWSER', 'no pages in context after wait, skip', {
-                profile: profilePath,
-                waitedMs: Date.now() - start
-            });
+            logWarn('BROWSER', 'no pages found, skip visibility', { profile: profilePath });
             return;
         }
 
-        // 🔥 apply visibility cho từng page với retry nhẹ
         for (const page of pages) {
-            let applied = false;
-
-            for (let i = 0; i < 3; i++) {
-                try {
-                    if (!page || page.isClosed()) break;
-
-                    await BrowserManager.#moveWindow(page);
-                    applied = true;
-                    break;
-                } catch (err) {
-                    await new Promise(r => setTimeout(r, 100));
-                }
-            }
-
-            if (!applied) {
-                logWarn('BROWSER', 'apply visibility failed for page', {
-                    profile: profilePath
-                });
-            }
+            await BrowserManager.#moveWindow(page);
         }
-
-        log('BROWSER', 'applyVisibility done', {
-            profile: profilePath,
-            pages: pages.length,
-            ms: Date.now() - start
-        });
     }
 
-    // HEADLESS=true  → off-screen (ẩn, render đầy đủ, không steal focus)
-    // HEADLESS=false → on-screen  (hiện, không steal focus)
+    // =========================
+    // INTERNAL: CDP move window
+    // =========================
     static async #moveWindow(page) {
         try {
             if (!page || page.isClosed()) return;
@@ -237,23 +205,23 @@ export class BrowserManager {
                 return;
             }
 
-            const { windowId } = await session.send('Browser.getWindowForTarget');
+            try {
+                const { windowId } = await session.send('Browser.getWindowForTarget');
 
-            if (HEADLESS) {
-                // Ẩn offscreen
                 await session.send('Browser.setWindowBounds', {
                     windowId,
-                    bounds: OFFSCREEN
+                    bounds: HEADLESS ? OFFSCREEN : ONSCREEN,
                 });
-            } else {
-                // 🔥 PHÓNG TO MAXIMIZE
-                await session.send('Browser.setWindowBounds', {
-                    windowId,
-                    bounds: { windowState: 'maximized' }
+
+                log('BROWSER', `🖥️ window moved`, {
+                    state: HEADLESS ? 'OFFSCREEN' : 'ONSCREEN',
+                    windowId
                 });
+
+            } finally {
+                await session.detach?.().catch(() => {});
             }
 
-            await session.detach?.();
         } catch (err) {
             logWarn('BROWSER', 'CDP moveWindow failed', { error: err.message });
         }
@@ -263,14 +231,20 @@ export class BrowserManager {
     // CLOSE ALL
     // =========================
     static async closeAll() {
+        const closePromises = [];
+
         for (const [profilePath, context] of activeContexts) {
-            try {
-                await context.close();
-                log('BROWSER', 'context closed', { profile: profilePath });
-            } catch (err) {
-                logError('BROWSER', 'error closing context', { profile: profilePath, error: err.message });
-            }
+            closePromises.push(
+                context.close()
+                    .then(() => log('BROWSER', 'context closed', { profile: profilePath }))
+                    .catch(err => logError('BROWSER', 'error closing context', {
+                        profile: profilePath,
+                        error: err.message
+                    }))
+            );
         }
+
+        await Promise.all(closePromises);
         activeContexts.clear();
 
         if (browser) {

@@ -337,16 +337,18 @@ process.on('message', async (msg) => {
     }
 
     if (msg.type === 'SET_HEADLESS') {
-        log('CONFIG', '🖥️ headless changed', { hide: msg.payload });
-        await BrowserManager.setVisibility(msg.payload); // payload=true → ẩn, false → hiện
+        log('CONFIG', '🖥️ headless changed', {
+            payload: msg.payload,
+            activeContexts: BrowserManager.getActiveContextCount?.() ?? 'unknown'
+        });
+        await BrowserManager.setVisibility(msg.payload);
+        log('CONFIG', '🖥️ setVisibility done');
     }
 
     if (msg.type === 'OPEN_PROFILE') {
 
         const { profilePath, type } = msg.payload;
         try {
-            const { BrowserManager } = await import('./core/browser/BrowserManager.js');
-
             // Mở context (hoặc reuse nếu đã mở)
             const context = await BrowserManager.newContext(profilePath);
 

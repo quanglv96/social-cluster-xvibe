@@ -7,6 +7,9 @@ import {setupGlobalErrorHandler} from "./config/globalErrorHandler.js";
 import fs from 'fs';
 import {runtimeConfig} from "./config/config.js";
 import {setupAutoUpdater} from "./updater.js";
+import pkg from 'electron-updater';
+
+const { autoUpdater } = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -345,4 +348,9 @@ ipcMain.on('open-profile', (_, payload) => {
     }
 
     serverProcess.send({ type: 'OPEN_PROFILE', payload: { profilePath, type }});
+});
+
+// main.js
+ipcMain.on('install-update', () => {
+    autoUpdater.quitAndInstall(false, true);
 });

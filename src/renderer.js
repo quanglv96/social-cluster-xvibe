@@ -219,5 +219,74 @@ window.refreshProfiles = function () {
 // Load profiles khi khởi động
 ipcRenderer.send('get-profiles');
 
+// ======================
+// UPDATER UI
+// ======================
+ipcRenderer.on('updater', (_, payload) => {
+    const { event, version, percent, kbps, transferred, total } = payload;
+
+    let badge = document.getElementById('update-badge');
+
+    // Helper tạo badge nếu chưa có
+    function ensureBadge() {
+        if (badge) return badge;
+        badge = document.createElement('div');
+        badge.id = 'update-badge';
+        badge.style.cssText = `
+            position: fixed; bottom: 16px; right: 16px;
+            font-family: var(--mono); font-size: 11px;
+            padding: 10px 16px; border-radius: 6px;
+            z-index: 9999; cursor: pointer; letter-spacing: .06em;
+            border: 1px solid; transition: all .2s;
+        `;
+        document.body.appendChild(badge);
+        return badge;
+    }
+
+    if (event === 'checking') {
+        // Không hiện badge, chỉ log (đã có log từ main)
+        return;
+    }
+
+    if (event === 'available') {
+        const b = ensureBadge();
+        b.style.background = 'var(--accent-dim)';
+        b.style.borderColor = 'var(--accent)';
+        b.style.color = 'var(--accent)';
+        b.innerText = `🆕 v${version} available — click to download`;
+        b.onclick = () => ipcRenderer.send('check-for-updates');
+    }
+
+    if (event === 'downloading') {
+        const b = ensureBadge();
+        b.style.background = '#1a1500';
+        b.style.borderColor = 'var(--amber)';
+        b.style.color = 'var(--amber)';
+        b.style.cursor = 'default';
+        b.onclick = null;
+
+        const pct = percent ?? 0;
+        if (transferred && total) {
+            b.innerText = `⬇️ ${pct}% — ${transferred}/${total} MB @ ${kbps} KB/s`;
+        } else {
+            b.innerText = `⬇️ Downloading... ${pct}%`;
+        }
+    }
+
+    if (event === 'downloaded') {
+        const b = ensureBadge();
+        b.style.background = 'var(--green-dim)';
+        b.style.borderColor = 'var(--green)';
+        b.style.color = 'var(--green)';
+        b.style.cursor = 'pointer';
+        b.innerText = `✅ v${version} ready — click to restart`;
+        b.onclick = () => ipcRenderer.send('install-update');
+    }
+
+    if (event === 'error' || event === 'idle') {
+        if (badge) badge.remove();
+    }
+});
+
 
 initHeadless();
