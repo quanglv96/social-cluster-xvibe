@@ -1,6 +1,9 @@
 // src/updater.js
-import { autoUpdater } from 'electron-updater';
-import { app, dialog } from 'electron';
+import pkg from 'electron-updater';
+
+import {app, dialog} from 'electron';
+
+const {autoUpdater} = pkg;
 
 export function setupAutoUpdater(mainWindow) {
     // Tắt auto-download để tự control
@@ -8,7 +11,7 @@ export function setupAutoUpdater(mainWindow) {
     autoUpdater.autoInstallOnAppQuit = true;
 
     function sendLog(type, msg) {
-        mainWindow?.webContents.send('log', { type, msg: `[UPDATER] ${msg}` });
+        mainWindow?.webContents.send('log', {type, msg: `[UPDATER] ${msg}`});
     }
 
     autoUpdater.on('checking-for-update', () => {
@@ -23,7 +26,7 @@ export function setupAutoUpdater(mainWindow) {
             title: 'Update Available',
             message: `Version ${info.version} is available.\nDownload now?`,
             buttons: ['Download', 'Later']
-        }).then(({ response }) => {
+        }).then(({response}) => {
             if (response === 0) {
                 autoUpdater.downloadUpdate();
                 sendLog('info', '⬇️ Downloading update...');
@@ -48,7 +51,7 @@ export function setupAutoUpdater(mainWindow) {
             title: 'Update Ready',
             message: `v${info.version} downloaded. Restart to install?`,
             buttons: ['Restart Now', 'Later']
-        }).then(({ response }) => {
+        }).then(({response}) => {
             if (response === 0) {
                 autoUpdater.quitAndInstall();
             }

@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import fs from "fs";
 
 // =========================
 // Log Utils
@@ -40,7 +41,7 @@ const STEALTH_ARGS = [
     '--no-default-browser-check',
     // 🔥 Ẩn khỏi taskbar Windows
     '--disable-infobars',
-    '--window-position=-32000,-32000',  // spawn thẳng off-screen, không flash
+    '--remote-debugging-port=0',  // ✅ thêm dòng này — dùng port thay vì pipe
 ];
 
 const OFFSCREEN = { left: -32000, top: -32000, width: 1366, height: 768, windowState: 'normal' };
@@ -63,7 +64,7 @@ export class BrowserManager {
 
     static async #launchBrowser() {
         log('BROWSER', '🚀 launching root browser');
-        const instance = await chromium.launchPersistentContext({
+        const instance = await chromium.launch({
             headless: false,
             args: STEALTH_ARGS,
         });
@@ -76,6 +77,10 @@ export class BrowserManager {
     // PERSISTENT CONTEXT (per profile)
     // =========================
     static async newContext(profilePath) {
+        // ✅ Kiểm tra profile path
+        if (!fs.existsSync(profilePath)) {
+            throw new Error(`Profile path does not exist: ${profilePath}`);
+        }
         if (!profilePath) throw new Error('[BrowserManager] profilePath is required');
 
         if (activeContexts.has(profilePath)) {
@@ -86,12 +91,12 @@ export class BrowserManager {
         log('BROWSER', '🚀 launching profile context', { profile: profilePath });
 
         const context = await chromium.launchPersistentContext(profilePath, {
-            headless: false,       // luôn false — visibility điều khiển bằng CDP off-screen
+            headless: false,
+            channel: undefined,   // ✅ không dùng edge, dùng playwright chromium
             args: STEALTH_ARGS,
-            viewport:   { width: 1366, height: 768 },
-            // userAgent:  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             locale:     'vi-VN',
             timezoneId: 'Asia/Ho_Chi_Minh',
+            viewport: null, // 🔥 QUAN TRỌNG → full theo window
         });
 
         activeContexts.set(profilePath, context);
@@ -100,8 +105,12 @@ export class BrowserManager {
             logWarn('BROWSER', 'profile context closed', { profile: profilePath });
             activeContexts.delete(profilePath);
         });
-        await new Promise(r => setTimeout(r, 300));
-        // Apply visibility cho page mặc định ngay khi launch
+
+        // ✅ Chờ page đầu tiên ready thay vì delay cứng
+        if (!context.pages().length) {
+            await context.waitForEvent('page', { timeout: 5000 }).catch(() => {});
+        }
+
         await BrowserManager.#applyVisibilityToContext(context, profilePath);
 
         logOk('BROWSER', 'profile context ready', { profile: profilePath });
@@ -160,14 +169,56 @@ export class BrowserManager {
     // INTERNAL
     // =========================
     static async #applyVisibilityToContext(context, profilePath = '?') {
-        const pages = context.pages();
+        const start = Date.now();
+        let pages = context.pages();
+
+        // 🔥 wait page xuất hiện (tối đa ~3s)
         if (!pages.length) {
-            logWarn('BROWSER', 'no pages in context, skip', { profile: profilePath });
+            try {
+                const page = await context.waitForEvent('page', { timeout: 3000 });
+                pages = [page];
+            } catch (_) {
+                // fallback → check lại lần cuối
+                pages = context.pages();
+            }
+        }
+
+        if (!pages.length) {
+            logWarn('BROWSER', 'no pages in context after wait, skip', {
+                profile: profilePath,
+                waitedMs: Date.now() - start
+            });
             return;
         }
+
+        // 🔥 apply visibility cho từng page với retry nhẹ
         for (const page of pages) {
-            await BrowserManager.#moveWindow(page);
+            let applied = false;
+
+            for (let i = 0; i < 3; i++) {
+                try {
+                    if (!page || page.isClosed()) break;
+
+                    await BrowserManager.#moveWindow(page);
+                    applied = true;
+                    break;
+                } catch (err) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
+            }
+
+            if (!applied) {
+                logWarn('BROWSER', 'apply visibility failed for page', {
+                    profile: profilePath
+                });
+            }
         }
+
+        log('BROWSER', 'applyVisibility done', {
+            profile: profilePath,
+            pages: pages.length,
+            ms: Date.now() - start
+        });
     }
 
     // HEADLESS=true  → off-screen (ẩn, render đầy đủ, không steal focus)
@@ -177,10 +228,8 @@ export class BrowserManager {
             if (!page || page.isClosed()) return;
 
             const context = page.context();
-
             if (!context || context._closed) return;
 
-            // SAFE attach
             let session;
             try {
                 session = await context.newCDPSession(page);
@@ -190,10 +239,19 @@ export class BrowserManager {
 
             const { windowId } = await session.send('Browser.getWindowForTarget');
 
-            await session.send('Browser.setWindowBounds', {
-                windowId,
-                bounds: HEADLESS ? OFFSCREEN : ONSCREEN,
-            });
+            if (HEADLESS) {
+                // Ẩn offscreen
+                await session.send('Browser.setWindowBounds', {
+                    windowId,
+                    bounds: OFFSCREEN
+                });
+            } else {
+                // 🔥 PHÓNG TO MAXIMIZE
+                await session.send('Browser.setWindowBounds', {
+                    windowId,
+                    bounds: { windowState: 'maximized' }
+                });
+            }
 
             await session.detach?.();
         } catch (err) {

@@ -16,7 +16,7 @@ function formatMsg(module, message, fields = {}) {
 }
 
 function sendToRenderer(type, msg) {
-    process.send?.({ type: 'LOG', data: { type, msg } });
+    process.send?.({type: 'LOG', data: {type, msg}});
 }
 
 function log(module, message, fields = {}) {
@@ -57,14 +57,14 @@ export class SessionManager {
 
     static async forceLogout(reason = 'unknown') {
         const start = Date.now();
-        log('FORCE_LOGOUT', '🚀 started', { reason });
+        log('FORCE_LOGOUT', '🚀 started', {reason});
 
         try {
             if (this.navigator) {
                 try {
                     await this.navigator.stop();
                 } catch (e) {
-                    logWarn('FORCE_LOGOUT', 'navigator stop error', { error: e.message });
+                    logWarn('FORCE_LOGOUT', 'navigator stop error', {error: e.message});
                 }
                 this.navigator = null;
             }
@@ -84,7 +84,7 @@ export class SessionManager {
                         );
 
                         await Promise.all([
-                            page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
+                            page.waitForNavigation({waitUntil: 'load', timeout: 10000}),
                             page.click('text=/Đăng xuất|Log Out/i')
                         ]);
 
@@ -98,7 +98,7 @@ export class SessionManager {
                         });
 
                     } catch (err) {
-                        logWarn('FORCE_LOGOUT', 'page logout failed, using fallback', { error: err.message });
+                        logWarn('FORCE_LOGOUT', 'page logout failed, using fallback', {error: err.message});
                         await page.goto('https://www.facebook.com/logout.php');
                     }
                 }
@@ -106,13 +106,13 @@ export class SessionManager {
                 try {
                     await this.context.clearCookies();
                 } catch (e) {
-                    logWarn('FORCE_LOGOUT', 'clearCookies error', { error: e.message });
+                    logWarn('FORCE_LOGOUT', 'clearCookies error', {error: e.message});
                 }
 
                 try {
                     await this.context.close();
                 } catch (e) {
-                    logWarn('FORCE_LOGOUT', 'close context error', { error: e.message });
+                    logWarn('FORCE_LOGOUT', 'close context error', {error: e.message});
                 }
             }
 
@@ -122,28 +122,89 @@ export class SessionManager {
             this.lifeHours = null;
             this.hasEvent = false;
 
-            logOk('FORCE_LOGOUT', 'done', { ms: Date.now() - start });
+            logOk('FORCE_LOGOUT', 'done', {ms: Date.now() - start});
 
         } catch (err) {
-            logError('FORCE_LOGOUT', 'failed', { error: err.message });
+            logError('FORCE_LOGOUT', 'failed', {error: err.message});
             throw err;
         }
     }
 
     static async getSession() {
-        if (!this.context || await this.#isExpired()) {
-            await this.#ensureInit();
-        }
+        const start = Date.now();
 
-        if (!this.rootPage || this.rootPage.isClosed()) {
-            this.rootPage = await this.context.newPage();
-            await this.#gotoRoot();
-        }
+        console.log('[DEBUG][getSession] START', {
+            hasContext: !!this.context,
+            hasRootPage: !!this.rootPage
+        });
 
-        return {
-            context: this.context,
-            rootPage: this.rootPage
-        };
+        try {
+            // ===== CHECK EXPIRED =====
+            let expired = false;
+            if (this.context) {
+                try {
+                    expired = await this.#isExpired();
+                } catch (err) {
+                    console.error('[DEBUG][getSession] isExpired ERROR', err);
+                }
+            }
+
+            console.log('[DEBUG][getSession] CHECK', {
+                hasContext: !!this.context,
+                expired
+            });
+
+            // ===== INIT IF NEEDED =====
+            if (!this.context || expired) {
+                console.log('[DEBUG][getSession] INIT SESSION TRIGGERED');
+                await this.#ensureInit();
+                console.log('[DEBUG][getSession] INIT SESSION DONE', {
+                    hasContext: !!this.context
+                });
+            }
+
+            // ===== ROOT PAGE =====
+            if (!this.rootPage || this.rootPage.isClosed()) {
+                console.log('[DEBUG][getSession] CREATE ROOT PAGE');
+
+                this.rootPage = await this.context.newPage();
+
+                console.log('[DEBUG][getSession] ROOT PAGE CREATED', {
+                    isClosed: this.rootPage.isClosed()
+                });
+
+                await this.#gotoRoot();
+
+                console.log('[DEBUG][getSession] GOTO ROOT DONE', {
+                    url: this.rootPage.url?.()
+                });
+            } else {
+                console.log('[DEBUG][getSession] REUSE ROOT PAGE', {
+                    isClosed: this.rootPage.isClosed()
+                });
+            }
+
+            const duration = Date.now() - start;
+
+            console.log('[DEBUG][getSession] SUCCESS', {
+                durationMs: duration,
+                hasContext: !!this.context,
+                hasRootPage: !!this.rootPage
+            });
+
+            return {
+                context: this.context,
+                rootPage: this.rootPage
+            };
+
+        } catch (err) {
+            console.error('[DEBUG][getSession] FAILED', {
+                error: err?.message,
+                stack: err?.stack,
+                durationMs: Date.now() - start
+            });
+            throw err;
+        }
     }
 
     static async #gotoRoot() {
@@ -153,7 +214,7 @@ export class SessionManager {
     }
 
     static async createEventPage() {
-        const { context } = await this.getSession();
+        const {context} = await this.getSession();
         return await context.newPage();
     }
 
@@ -175,7 +236,7 @@ export class SessionManager {
                 await context.close();
             }
         } catch (e) {
-            logWarn('SESSION', 'cannot close event page', { error: e.message });
+            logWarn('SESSION', 'cannot close event page', {error: e.message});
         }
 
         await this.restoreRootOnly();
@@ -185,7 +246,7 @@ export class SessionManager {
         try {
             await this.#restoreRoot();
         } catch (e) {
-            logWarn('SESSION', 'restoreRootOnly error', { error: e.message });
+            logWarn('SESSION', 'restoreRootOnly error', {error: e.message});
         }
 
         this.hasEvent = false;
@@ -197,7 +258,7 @@ export class SessionManager {
             );
 
             this.navigator.start().catch(err =>
-                logWarn('NAVIGATOR', 'start error', { error: err.message })
+                logWarn('NAVIGATOR', 'start error', {error: err.message})
             );
         }
     }
@@ -223,21 +284,21 @@ export class SessionManager {
             try {
                 await this.context.close();
             } catch (e) {
-                logWarn('SESSION', 'error closing old context', { error: e.message });
+                logWarn('SESSION', 'error closing old context', {error: e.message});
             }
         }
 
         const browser = await BrowserManager.getBrowser();
 
         this.context = await browser.newContext({
-            viewport: { width: 1366, height: 768 },
+            viewport: {width: 1366, height: 768},
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             locale: 'en-US',
             timezoneId: 'Asia/Ho_Chi_Minh'
         });
 
         await this.context.addInitScript(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            Object.defineProperty(navigator, 'webdriver', {get: () => false});
         });
 
         this.rootPage = await this.context.newPage();
@@ -246,7 +307,7 @@ export class SessionManager {
         this.createdAt = Date.now();
         this.lifeHours = this.#random(5, 24);
 
-        logOk('SESSION', 'initialized', { lifeHours: this.lifeHours });
+        logOk('SESSION', 'initialized', {lifeHours: this.lifeHours});
     }
 
     static async #isExpired() {
@@ -280,10 +341,10 @@ export class SessionManager {
                 sessionStorage.clear();
             });
 
-            await this.rootPage.reload({ waitUntil: 'domcontentloaded' });
+            await this.rootPage.reload({waitUntil: 'domcontentloaded'});
 
         } catch (e) {
-            logWarn('SESSION', 'cannot restore root', { error: e.message });
+            logWarn('SESSION', 'cannot restore root', {error: e.message});
         }
     }
 
@@ -301,7 +362,7 @@ export class SessionManager {
         try {
             await this.context.close();
         } catch (e) {
-            logWarn('BOT', 'sleep close error', { error: e.message });
+            logWarn('BOT', 'sleep close error', {error: e.message});
         }
 
         this.context = null;
@@ -335,7 +396,7 @@ export class SessionManager {
         );
 
         this.navigator.start().catch(err =>
-            logWarn('NAVIGATOR', 'start error', { error: err.message })
+            logWarn('NAVIGATOR', 'start error', {error: err.message})
         );
 
         logOk('BOT', 'navigator started');

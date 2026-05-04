@@ -1,8 +1,6 @@
-import {spawn} from 'child_process';
+import { spawn } from 'child_process';
 
-// =========================
-// Log Utils (giống class trước)
-// =========================
+const TAG = 'TUNNEL';
 
 function nowIso() {
     return new Date().toISOString();
@@ -14,39 +12,17 @@ function formatMsg(requestId, message, fields = {}) {
 }
 
 function sendToRenderer(type, msg) {
-    process.send?.({type: 'LOG', data: {type, msg}});
+    process.send?.({ type: 'LOG', data: { type, msg } });
 }
 
-function log(requestId, message, fields = {}) {
-    const msg = formatMsg(requestId, message, fields);
-    sendToRenderer('info', msg);
+function log(id, msg, f = {}) { sendToRenderer('info', formatMsg(id, msg, f)); }
+function logWarn(id, msg, f = {}) { sendToRenderer('warn', formatMsg(id, `⚠️ ${msg}`, f)); }
+function logError(id, msg, err) {
+    sendToRenderer('error', formatMsg(id, `❌ ${msg}`, { error: err?.message || err }));
 }
-
-function logWarn(requestId, message, fields = {}) {
-    const msg = formatMsg(requestId, `⚠️ ${message}`, fields);
-    sendToRenderer('warn', msg);
-}
-
-function logError(requestId, message, err) {
-    const msg = formatMsg(requestId, `❌ ${message}`, {
-        error: err?.message || err
-    });
-    sendToRenderer('error', msg);
-}
-
-function logOk(requestId, message, fields = {}) {
-    const msg = formatMsg(requestId, `✅ ${message}`, fields);
-    sendToRenderer('ok', msg);
-}
-
-// =========================
-// Class
-// =========================
-
-const TAG = 'TUNNEL';
+function logOk(id, msg, f = {}) { sendToRenderer('ok', formatMsg(id, `✅ ${msg}`, f)); }
 
 export class TunnelService {
-
     static process = null;
     static url = null;
 
@@ -54,15 +30,15 @@ export class TunnelService {
         const requestId = `${TAG}_${Date.now()}`;
 
         if (this.url) {
-            log(requestId, 'Reuse tunnel', {url: this.url});
+            log(requestId, 'Reuse tunnel', { url: this.url });
             return this.url;
         }
 
-        log(requestId, 'Starting SSH tunnel (serveo)', {port});
+        log(requestId, 'Starting SSH tunnel (serveo)', { port });
 
         return new Promise((resolve, reject) => {
-
             const startTime = Date.now();
+            let resolved = false;
 
             const proc = spawn('ssh', [
                 '-o', 'StrictHostKeyChecking=no',
@@ -71,28 +47,42 @@ export class TunnelService {
                 '-o', 'ExitOnForwardFailure=yes',
                 '-R', `80:localhost:${port}`,
                 'serveo.net'
-            ], {stdio: ['ignore', 'pipe', 'pipe']});
+            ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
             this.process = proc;
 
             const timer = setTimeout(() => {
-                proc.kill();
-                logError(requestId, 'Tunnel timeout after 30s');
-                reject(new Error('Tunnel timeout sau 30s — kiểm tra SSH có sẵn không'));
+                if (!resolved) {
+                    proc.kill();
+                    logError(requestId, 'Tunnel timeout after 30s');
+                    reject(new Error('Tunnel timeout sau 30s'));
+                }
             }, 30000);
 
-            const onData = (data) => {
+            const handleOutput = (data) => {
                 const text = data.toString();
 
                 text.split('\n')
                     .map(l => l.trim())
                     .filter(Boolean)
-                    .forEach(l => log(requestId, '[serveo]', {msg: l}));
+                    .forEach(l => log(requestId, '[serveo]', { msg: l }));
 
-                const match = text.match(/https:\/\/[a-z0-9\-]+\.serveousercontent\.com/);
-                if (match) {
+                /**
+                 * Serveo có nhiều format output:
+                 * - Forwarding HTTP traffic from http://xxx
+                 * - https://xxx
+                 * => chỉ cần lấy domain
+                 */
+                const domainMatch = text.match(/([a-z0-9\-]+\.serveousercontent\.com)/);
+
+                if (domainMatch && !resolved) {
+                    resolved = true;
                     clearTimeout(timer);
-                    this.url = match[0];
+
+                    const domain = domainMatch[1];
+
+                    // 🔥 ép dùng HTTP để tránh SSL lỗi
+                    this.url = `http://${domain}`;
 
                     logOk(requestId, 'Tunnel ready', {
                         url: this.url,
@@ -103,14 +93,14 @@ export class TunnelService {
                 }
             };
 
-            proc.stdout.on('data', onData);
-            proc.stderr.on('data', onData);
+            proc.stdout.on('data', handleOutput);
+            proc.stderr.on('data', handleOutput);
 
             proc.on('error', (err) => {
                 clearTimeout(timer);
                 if (err.code === 'ENOENT') {
                     logError(requestId, 'SSH not found', err);
-                    reject(new Error('ssh không tìm thấy — cài openssh-client trước'));
+                    reject(new Error('Thiếu SSH (openssh-client)'));
                 } else {
                     logError(requestId, 'Tunnel process error', err);
                     reject(err);
@@ -120,7 +110,7 @@ export class TunnelService {
             proc.on('close', (code) => {
                 clearTimeout(timer);
 
-                logWarn(requestId, 'Tunnel closed', {code});
+                logWarn(requestId, 'Tunnel closed', { code });
 
                 this.url = null;
                 this.process = null;
@@ -133,7 +123,7 @@ export class TunnelService {
         });
     }
 
-    static async stop() {
+    static stop() {
         const requestId = `${TAG}_${Date.now()}`;
 
         if (this.process) {
