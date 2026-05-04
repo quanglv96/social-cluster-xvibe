@@ -62,10 +62,17 @@ export class BrowserManager {
             headless: false,
             args: STEALTH_ARGS,
         });
+
         instance.on('disconnected', () => {
             logWarn('BROWSER', 'root browser disconnected');
             browser = null;
         });
+
+        // ✅ Lắng nghe page mới tạo trong root browser → apply visibility ngay
+        instance.on('page', async (page) => {
+            await BrowserManager.#moveWindow(page);
+        });
+
         logOk('BROWSER', 'root browser launched');
         return instance;
     }
@@ -140,7 +147,7 @@ export class BrowserManager {
 
         const tasks = [];
 
-        // Apply cho tất cả profile contexts
+        // ✅ Apply cho tất cả profile contexts
         for (const [profilePath, context] of activeContexts) {
             tasks.push(
                 BrowserManager.#applyVisibilityToContext(context, profilePath)
@@ -149,6 +156,20 @@ export class BrowserManager {
                         error: err.message
                     }))
             );
+        }
+
+        // ✅ Apply cho root browser contexts
+        if (browser?.isConnected()) {
+            for (const ctx of browser.contexts()) {
+                for (const page of ctx.pages()) {
+                    tasks.push(
+                        BrowserManager.#moveWindow(page)
+                            .catch(err => logWarn('BROWSER', 'root browser moveWindow failed', {
+                                error: err.message
+                            }))
+                    );
+                }
+            }
         }
 
         await Promise.all(tasks);
