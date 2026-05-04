@@ -213,7 +213,12 @@ export class SessionManager {
 
     static async createEventPage() {
         const {context} = await this.getSession();
-        return await context.newPage();
+        const page = await context.newPage();
+
+        // ✅ Apply visibility cho event page
+        await BrowserManager.applyVisibilityToPage(page);
+
+        return page;
     }
 
     static hasEvent = false;
@@ -275,6 +280,7 @@ export class SessionManager {
         this.initializing = null;
     }
 
+    // SessionManager.js — sửa #initSession
     static async #initSession() {
         log('SESSION', '🚀 initializing new session');
 
@@ -300,6 +306,15 @@ export class SessionManager {
         });
 
         this.rootPage = await this.context.newPage();
+
+        // ✅ Apply visibility ngay sau khi tạo page
+        await BrowserManager.applyVisibilityToPage(this.rootPage);
+
+        // ✅ Lắng nghe page mới trong context này
+        this.context.on('page', async (page) => {
+            await BrowserManager.applyVisibilityToPage(page);
+        });
+
         await this.#gotoRoot();
 
         this.createdAt = Date.now();
