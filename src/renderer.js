@@ -220,14 +220,33 @@ window.refreshProfiles = function () {
 ipcRenderer.send('get-profiles');
 
 // ======================
+// CHECK UPDATE THỦ CÔNG
+// ======================
+window.checkUpdate = function () {
+    const btn = document.getElementById('btn-check-update');
+    btn.innerText = '↑ Checking...';
+    btn.style.opacity = '0.6';
+    btn.disabled = true;
+
+    ipcRenderer.send('check-for-updates');
+
+    // Reset button sau 5 giây
+    setTimeout(() => {
+        btn.innerText = '↑ Check Update';
+        btn.style.opacity = '1';
+        btn.disabled = false;
+    }, 5000);
+};
+
+// ======================
 // UPDATER UI
 // ======================
 ipcRenderer.on('updater', (_, payload) => {
     const { event, version, percent, kbps, transferred, total } = payload;
 
     let badge = document.getElementById('update-badge');
+    const btn = document.getElementById('btn-check-update');
 
-    // Helper tạo badge nếu chưa có
     function ensureBadge() {
         if (badge) return badge;
         badge = document.createElement('div');
@@ -244,11 +263,25 @@ ipcRenderer.on('updater', (_, payload) => {
     }
 
     if (event === 'checking') {
-        // Không hiện badge, chỉ log (đã có log từ main)
+        if (btn) {
+            btn.innerText = '↑ Checking...';
+            btn.style.opacity = '0.6';
+        }
         return;
     }
 
     if (event === 'available') {
+        // Reset button
+        if (btn) {
+            btn.innerText = '🆕 Download';
+            btn.style.opacity = '1';
+            btn.style.borderColor = 'var(--amber)';
+            btn.style.color = 'var(--amber)';
+            btn.style.background = '#1a1500';
+            btn.disabled = false;
+            btn.onclick = () => ipcRenderer.send('check-for-updates');
+        }
+
         const b = ensureBadge();
         b.style.background = 'var(--accent-dim)';
         b.style.borderColor = 'var(--accent)';
@@ -258,6 +291,14 @@ ipcRenderer.on('updater', (_, payload) => {
     }
 
     if (event === 'downloading') {
+        if (btn) {
+            btn.innerText = `⬇️ ${percent ?? 0}%`;
+            btn.style.opacity = '1';
+            btn.style.borderColor = 'var(--amber)';
+            btn.style.color = 'var(--amber)';
+            btn.disabled = true;
+        }
+
         const b = ensureBadge();
         b.style.background = '#1a1500';
         b.style.borderColor = 'var(--amber)';
@@ -265,15 +306,24 @@ ipcRenderer.on('updater', (_, payload) => {
         b.style.cursor = 'default';
         b.onclick = null;
 
-        const pct = percent ?? 0;
         if (transferred && total) {
-            b.innerText = `⬇️ ${pct}% — ${transferred}/${total} MB @ ${kbps} KB/s`;
+            b.innerText = `⬇️ ${percent ?? 0}% — ${transferred}/${total} MB @ ${kbps} KB/s`;
         } else {
-            b.innerText = `⬇️ Downloading... ${pct}%`;
+            b.innerText = `⬇️ Downloading... ${percent ?? 0}%`;
         }
     }
 
     if (event === 'downloaded') {
+        if (btn) {
+            btn.innerText = '✅ Restart';
+            btn.style.opacity = '1';
+            btn.style.borderColor = 'var(--green)';
+            btn.style.color = 'var(--green)';
+            btn.style.background = 'var(--green-dim)';
+            btn.disabled = false;
+            btn.onclick = () => ipcRenderer.send('install-update');
+        }
+
         const b = ensureBadge();
         b.style.background = 'var(--green-dim)';
         b.style.borderColor = 'var(--green)';
@@ -284,6 +334,15 @@ ipcRenderer.on('updater', (_, payload) => {
     }
 
     if (event === 'error' || event === 'idle') {
+        if (btn) {
+            btn.innerText = '↑ Check Update';
+            btn.style.opacity = '1';
+            btn.style.borderColor = '#22c55e';
+            btn.style.color = '#22c55e';
+            btn.style.background = '#0d1f0d';
+            btn.disabled = false;
+            btn.onclick = () => checkUpdate();
+        }
         if (badge) badge.remove();
     }
 });
