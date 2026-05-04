@@ -5,15 +5,11 @@ import os from 'os';
 
 import { DelayService } from '../../../services/delay.service.js';
 import { FacebookPostProfile } from "./FacebookPostProfile.js";
+import {nowIso} from "../../../utils/time.js";
 
 // =========================
 // Log Utils
 // =========================
-
-function nowIso() {
-    return new Date().toISOString();
-}
-
 function formatMsg(requestId, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
     return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;

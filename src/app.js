@@ -7,6 +7,7 @@ import {TunnelService} from "./TunnelService.js";
 import os from 'os';
 import {runtimeConfig} from "./config/config.js";
 import {FacebookContextPool} from "./core/auth/FacebookContextPool.js";
+import {nowIso} from "./utils/time.js";
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -51,10 +52,6 @@ async function waitForActiveRequestsToDrain(timeoutMs = RECOVERY_WAIT_TIMEOUT_MS
 // =========================
 // Log Utils
 // =========================
-
-function nowIso() {
-    return new Date().toISOString();
-}
 
 function formatMsg(module, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');

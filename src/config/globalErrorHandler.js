@@ -1,6 +1,4 @@
-function nowIso() {
-    return new Date().toISOString();
-}
+import {nowIso} from "../utils/time.js";
 
 function formatMsg(requestId, message, fields = {}) {
     const fieldStr = Object.entries(fields)

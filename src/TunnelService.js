@@ -1,10 +1,8 @@
 import { spawn } from 'child_process';
+import {nowIso} from "./utils/time.js";
 
 const TAG = 'TUNNEL';
 
-function nowIso() {
-    return new Date().toISOString();
-}
 
 function formatMsg(requestId, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');

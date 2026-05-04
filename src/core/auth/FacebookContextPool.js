@@ -3,12 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import { FacebookAuth } from "./FacebookAuth.js";
 import { BrowserManager, HEADLESS } from "../browser/BrowserManager.js";
+import {nowIso} from "../../utils/time.js";
 
 // =========================
 // Log Utils
 // =========================
-function nowIso() { return new Date().toISOString(); }
-
 function formatMsg(requestId, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
     return `[${nowIso()}] [${requestId}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;

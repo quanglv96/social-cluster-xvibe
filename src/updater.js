@@ -1,25 +1,30 @@
 import pkg from 'electron-updater';
 import { app, dialog, ipcMain } from 'electron';
+import {nowIso} from "./utils/time.js";
 
 const { autoUpdater } = pkg;
 
+let isSetup = false;
+
 export function setupAutoUpdater(mainWindow) {
+    if (isSetup) return;
+    isSetup = true;
+
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
-
-    // ✅ Bỏ qua lỗi cert trên một số môi trường
     autoUpdater.allowPrerelease = false;
     autoUpdater.allowDowngrade = false;
 
-    function sendLog(type, msg) {
-        mainWindow?.webContents.send('log', { type, msg: `[UPDATER] ${msg}` });
+    // ✅ Dùng đúng format như các module khác → hiện trong log panel
+    function sendLog(type, message) {
+        const msg = `[${nowIso()}] [UPDATER] ${message}`;
+        console.log(msg);
+        mainWindow?.webContents.send('log', { type, msg });
     }
 
     function sendUpdate(event, data = {}) {
         mainWindow?.webContents.send('updater', { event, ...data });
     }
-
-    // ── EVENTS ──────────────────────────────────
 
     autoUpdater.on('checking-for-update', () => {
         sendLog('info', '🔍 Checking for update...');
@@ -64,12 +69,10 @@ export function setupAutoUpdater(mainWindow) {
         sendUpdate('downloading', { percent: pct, kbps, transferred, total });
     });
 
-    // updater.js — sửa event update-downloaded
     autoUpdater.on('update-downloaded', (info) => {
-        sendLog('ok', `✅ Update v${info.version} downloaded. Will install on quit.`);
+        sendLog('ok', `✅ Update v${info.version} ready to install`);
         sendUpdate('downloaded', { version: info.version });
 
-        // Dialog vẫn giữ để user có thể restart ngay
         dialog.showMessageBox(mainWindow, {
             type: 'info',
             title: 'Update Ready',
@@ -90,17 +93,16 @@ export function setupAutoUpdater(mainWindow) {
         sendUpdate('error', { message: err.message });
     });
 
-    // ── CHECK FOR UPDATES ────────────────────────
-
     setTimeout(() => {
         if (app.isPackaged) {
+            sendLog('info', '🔍 Starting update check...');
             autoUpdater.checkForUpdates();
         } else {
             sendLog('warn', '⚠️ Dev mode — skipping update check');
         }
     }, 3000);
 
-    // ── IPC: renderer có thể trigger check thủ công ──
+    ipcMain.removeAllListeners('check-for-updates');
     ipcMain.on('check-for-updates', () => {
         if (app.isPackaged) {
             autoUpdater.checkForUpdates();

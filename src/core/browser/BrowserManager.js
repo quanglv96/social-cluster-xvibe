@@ -1,10 +1,10 @@
 import { chromium } from 'playwright';
 import fs from "fs";
+import {nowIso} from "../../utils/time.js";
 
 // =========================
 // Log Utils
 // =========================
-function nowIso() { return new Date().toISOString(); }
 function formatMsg(module, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
     return `[${nowIso()}] [${module}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;

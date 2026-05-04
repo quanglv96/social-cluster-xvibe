@@ -8,8 +8,9 @@ import fs from 'fs';
 import {runtimeConfig} from "./config/config.js";
 import {setupAutoUpdater} from "./updater.js";
 import pkg from 'electron-updater';
+import {nowIso} from "./utils/time.js";
 
-const { autoUpdater } = pkg;
+const {autoUpdater} = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,11 +22,10 @@ let serverProcess;
 // Log Utils
 // ======================
 
-function nowIso() {
-    return new Date().toISOString();
-}
+
 
 setupGlobalErrorHandler();
+
 function clearRuntimeConfigIfVersionChanged() {
     const userDataPath = app.getPath('userData');
     const configPath = path.join(userDataPath, 'config.runtime.json');
@@ -51,13 +51,14 @@ function clearRuntimeConfigIfVersionChanged() {
 
             // Lưu version mới
             fs.writeFileSync(versionPath, currentVersion);
-            log('CONFIG', '📌 version stamp updated', { version: currentVersion });
+            log('CONFIG', '📌 version stamp updated', {version: currentVersion});
         }
 
     } catch (err) {
-        logError('CONFIG', 'cache invalidation failed', { error: err.message });
+        logError('CONFIG', 'cache invalidation failed', {error: err.message});
     }
 }
+
 function formatLog(module, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
     return `[${nowIso()}] [${module}] ${message}${fieldStr ? ' | ' + fieldStr : ''}`;
@@ -249,6 +250,7 @@ app.whenReady().then(() => {
     startServer();
     // ✅ Thêm dòng này
     mainWindow.webContents.on('did-finish-load', () => {
+        sendProfilesToRenderer();
         setupAutoUpdater(mainWindow);
     });
 });
@@ -272,7 +274,7 @@ ipcMain.handle('get-headless', () => HEADLESS);
 ipcMain.on('set-headless', (e, val) => {
     HEADLESS = val;
     if (serverProcess) {
-        serverProcess.send({ type: 'SET_HEADLESS', payload: val });
+        serverProcess.send({type: 'SET_HEADLESS', payload: val});
     }
 });
 
@@ -299,7 +301,7 @@ function sendProfilesToRenderer() {
         log('PROFILES', `sent ${profiles.length} profiles (fb: ${fbProfiles.length}, twitter: ${twitterProfiles.length})`);
 
     } catch (err) {
-        logError('PROFILES', 'failed to read profiles', { error: err.message });
+        logError('PROFILES', 'failed to read profiles', {error: err.message});
         mainWindow?.webContents.send('profiles', []);
     }
 }
@@ -308,29 +310,21 @@ function readProfilesFromDir(baseDir, type) {
     try {
         if (!fs.existsSync(baseDir)) return [];
 
-        const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+        const entries = fs.readdirSync(baseDir, {withFileTypes: true});
 
         return entries
             .filter(e => e.isDirectory())
             .map(e => ({
                 name: e.name,
                 profilePath: path.join(baseDir, e.name),
-                type:type // 'facebook' | 'twitter'
+                type: type // 'facebook' | 'twitter'
             }));
 
     } catch (err) {
-        logError('PROFILES', 'failed to read dir', { dir: baseDir, error: err.message });
+        logError('PROFILES', 'failed to read dir', {dir: baseDir, error: err.message});
         return [];
     }
 }
-
-// Gửi profiles ngay khi window ready
-app.whenReady().then(() => {
-    // (đã có createWindow + startServer ở trên, chỉ thêm dòng này)
-    mainWindow?.webContents.on('did-finish-load', () => {
-        sendProfilesToRenderer();
-    });
-});
 
 // Renderer request refresh danh sách
 ipcMain.on('get-profiles', () => {
@@ -339,15 +333,15 @@ ipcMain.on('get-profiles', () => {
 
 // Renderer bấm "Mở" → forward xuống server process
 ipcMain.on('open-profile', (_, payload) => {
-    const { profilePath, type } = payload;
-    log('PROFILES', `open-profile requested`, { profilePath, type });
+    const {profilePath, type} = payload;
+    log('PROFILES', `open-profile requested`, {profilePath, type});
 
     if (!serverProcess) {
         logWarn('PROFILES', 'server not running, cannot open profile');
         return;
     }
 
-    serverProcess.send({ type: 'OPEN_PROFILE', payload: { profilePath, type }});
+    serverProcess.send({type: 'OPEN_PROFILE', payload: {profilePath, type}});
 });
 
 // main.js

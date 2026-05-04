@@ -14,6 +14,7 @@ import { resetTunnelServer } from "../app.js";
 import {PartnerPostGroupTrigger} from "../triggers/PartnerPostGroupTrigger.js";
 import {TiktokUploadTrigger} from "../triggers/TiktokUploadTrigger.js";
 import {PostFbReelsTrigger} from "../triggers/PostFbReelsTrigger.js";
+import {nowIso} from "../utils/time.js";
 
 const router = express.Router();
 
@@ -26,9 +27,6 @@ let TOTAL_REQUESTS = 0;
 // Utils
 // =========================
 
-function nowIso() {
-    return new Date().toISOString();
-}
 
 function elapsed(startTime) {
     return Date.now() - startTime;

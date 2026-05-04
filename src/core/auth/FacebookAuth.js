@@ -1,14 +1,11 @@
 import axios from 'axios';
 import {config, runtimeConfig} from '../../config/config.js';
 import { BaseAuth } from './BaseAuth.js';
+import {nowIso} from "../../utils/time.js";
 
 // =========================
 // Log Utils
 // =========================
-
-function nowIso() {
-    return new Date().toISOString();
-}
 
 function formatMsg(requestId, message, fields = {}) {
     const fieldStr = Object.entries(fields).map(([k, v]) => `${k}=${v}`).join(' ');
