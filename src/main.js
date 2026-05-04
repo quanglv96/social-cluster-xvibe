@@ -253,6 +253,11 @@ app.whenReady().then(() => {
         sendProfilesToRenderer();
         setupAutoUpdater(mainWindow);
     });
+    // ✅ Fallback: nếu did-finish-load đã fire rồi thì gọi thẳng
+    if (!mainWindow.webContents.isLoading()) {
+        sendProfilesToRenderer();
+        setupAutoUpdater(mainWindow);
+    }
 });
 
 app.on('window-all-closed', () => {
