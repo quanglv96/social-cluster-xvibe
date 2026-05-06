@@ -36,6 +36,9 @@ const STEALTH_ARGS = [
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-infobars',
+    // Bổ sung thêm để tăng độ tin cậy
+    '--disable-web-security',
+    '--disable-features=IsolateOrigins,site-per-process',
 ];
 
 const OFFSCREEN = { left: -32000, top: -32000, width: 1366, height: 768, windowState: 'normal' };

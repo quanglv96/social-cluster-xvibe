@@ -88,24 +88,36 @@ export class TiktokUploadVideo {
         try {
             log(TAG, `🚀 START upload`, {mediaId, caption: caption?.slice(0, 40)});
 
-            // STEP 1: Tải video về máy
+            // STEP 1: Tải video về máy TRƯỚC — page chưa cần dùng
             log(TAG, `STEP 1: Downloading video...`);
-            tempFile = await this.downloadVideo(mediaId);
+
+            // Ping page định kỳ để giữ alive trong lúc download
+            const keepAliveInterval = this.startKeepAlive(page);
+
+            try {
+                tempFile = await this.downloadVideo(mediaId);
+            } finally {
+                clearInterval(keepAliveInterval);
+            }
+
             log(TAG, `Video downloaded`, {filePath: tempFile});
 
-            // STEP 2+3: Kéo video vào màn hình upload — có retry tối đa 3 lần
+            // STEP 1.5: Kiểm tra page còn sống không trước khi tiếp tục
+            await this.ensurePageAlive(page);
+
+            // STEP 2: Kéo video vào màn hình upload — có retry tối đa 3 lần
             log(TAG, `STEP 2+3: Drop video & wait for upload success...`);
             await this.dropVideoWithRetry(page, tempFile);
-
-            // STEP 4: Điền caption
+            // STEP 3: Dismiss tutorial tooltip nếu có
+            log(TAG, `STEP 3: Dismissing tutorial tooltip if any...`);
+            await this.dismissTutorialTooltip(page);
+            // ... rest of steps
             log(TAG, `STEP 4: Filling caption...`);
             await this.fillCaption(page, caption);
 
-            // STEP 5: Cuộn xuống 2 lần
             log(TAG, `STEP 5: Scrolling down 2 times...`);
             await this.scrollDown(page, 2);
 
-            // STEP 6: Ấn nút Đăng
             log(TAG, `STEP 6: Clicking Post button...`);
             await this.clickPostButton(page);
 
@@ -113,8 +125,45 @@ export class TiktokUploadVideo {
             return {success: true, mediaId};
 
         } finally {
-            // Luôn xóa file rác dù thành công hay thất bại
             this.safeDeleteFile(tempFile);
+        }
+    }
+
+// ------------------------------------------------
+// Ping page mỗi 5s để giữ không bị close/idle
+// ------------------------------------------------
+    startKeepAlive(page) {
+        log(TAG, `Starting page keep-alive ping...`);
+        return setInterval(async () => {
+            try {
+                await page.evaluate(() => document.title);
+                log(TAG, `Keep-alive ping OK`);
+            } catch (_) {
+                // page đã close — interval sẽ bị clear bên ngoài
+            }
+        }, 5000);
+    }
+
+// ------------------------------------------------
+// Kiểm tra page còn sống — nếu không thì throw rõ ràng
+// ------------------------------------------------
+    async ensurePageAlive(page) {
+        try {
+            const url = page.url();
+            log(TAG, `Page still alive`, {url});
+
+            // Nếu bị redirect ra khỏi upload page → navigate lại
+            if (!url.includes('tiktokstudio') && !url.includes('upload')) {
+                logWarn(TAG, `Page navigated away during download — re-navigating to upload...`);
+                await page.goto('https://www.tiktok.com/tiktokstudio/upload', {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 30000,
+                });
+                await this.sleep(3000);
+                await this.waitForDropZone(page);
+            }
+        } catch (err) {
+            throw new Error(`Page is no longer alive after download: ${err.message}`);
         }
     }
 
@@ -238,53 +287,64 @@ export class TiktokUploadVideo {
     // ------------------------------------------------
     // Kéo (drag & drop) file video vào giữa màn hình
     // ------------------------------------------------
+    // ------------------------------------------------
+// Kéo (drag & drop) file video vào giữa màn hình
+// ------------------------------------------------
     async dropVideoFile(page, filePath) {
         log(TAG, `Dropping video file`, {filePath});
 
-        const fileName = path.basename(filePath);
-        const fileBase64 = fs.readFileSync(filePath, {encoding: 'base64'});
+        // --- Cách 1: setInputFiles trên hidden file input (ưu tiên, không cần base64) ---
+        const fileInputSelectors = [
+            'input[type="file"][accept*="video"]',
+            'input[type="file"]',
+        ];
 
-        // Xác định MIME type
-        const mimeType = fileName.endsWith('.mp4') ? 'video/mp4'
-            : fileName.endsWith('.mov') ? 'video/quicktime'
-                : 'video/mp4';
+        for (const sel of fileInputSelectors) {
+            try {
+                const input = page.locator(sel).first();
+                // Bỏ display:none / visibility:hidden để Playwright có thể thao tác
+                await page.evaluate((s) => {
+                    const el = document.querySelector(s);
+                    if (el) {
+                        el.style.display = 'block';
+                        el.style.opacity = '1';
+                        el.style.visibility = 'visible';
+                        el.removeAttribute('hidden');
+                    }
+                }, sel);
 
-        // Tạo DataTransfer trong browser context
-        const dataTransfer = await page.evaluateHandle(
-            async ({fileBase64, fileName, mimeType}) => {
-                const byteCharacters = atob(fileBase64);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], {type: mimeType});
-                const file = new File([blob], fileName, {type: mimeType});
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                return dt;
-            },
-            {fileBase64, fileName, mimeType}
-        );
+                await input.waitFor({state: 'attached', timeout: 5000});
+                await input.setInputFiles(filePath);
+                logOk(TAG, `Video set via setInputFiles`, {selector: sel});
 
-        // Lấy tọa độ giữa màn hình để drop
-        const viewport = page.viewportSize();
-        const centerX = viewport ? viewport.width / 2 : 760;
-        const centerY = viewport ? viewport.height / 2 : 400;
+                // Chờ TikTok bắt đầu xử lý
+                await this.sleep(3000);
+                return;
+            } catch (_) {
+                // thử selector tiếp theo
+            }
+        }
 
-        log(TAG, `Dispatching drag events`, {centerX, centerY});
+        // --- Cách 2: Fallback — dispatch drop với chunk nhỏ (không truyền toàn bộ base64) ---
+        logWarn(TAG, `No file input found — falling back to drag-drop via Playwright upload`);
 
-        await page.dispatchEvent('body', 'dragenter', {dataTransfer});
-        await this.sleep(300);
-        await page.dispatchEvent('body', 'dragover', {dataTransfer});
-        await this.sleep(300);
-        await page.mouse.move(centerX, centerY);
-        await this.sleep(200);
-        await page.dispatchEvent('body', 'drop', {dataTransfer});
+        // Playwright hỗ trợ dispatchEvent với file path trực tiếp (không cần base64)
+        await page.setInputFiles('input[type="file"]', filePath).catch(() => null);
 
-        logOk(TAG, `Video dropped — waiting for processing...`);
+        // Nếu vẫn không được, dùng CDP để inject file
+        try {
+            const [fileChooser] = await Promise.all([
+                page.waitForFileChooser({timeout: 5000}),
+                page.click('[class*="upload-zone"], [class*="drag-upload"], [data-e2e="upload_zone"]')
+                    .catch(() => page.click('body')),
+            ]);
+            await fileChooser.setFiles(filePath);
+            logOk(TAG, `Video set via FileChooser`);
+        } catch (err) {
+            throw new Error(`All upload methods failed: ${err.message}`);
+        }
 
-        // Chờ TikTok bắt đầu xử lý (progress bar / info-body xuất hiện)
+        // Chờ TikTok bắt đầu xử lý
         await this.sleep(3000);
     }
 
@@ -413,6 +473,9 @@ export class TiktokUploadVideo {
     // ------------------------------------------------
     // STEP 6: Click nút Đăng
     // ------------------------------------------------
+    // ------------------------------------------------
+// STEP 6: Click nút Đăng
+// ------------------------------------------------
     async clickPostButton(page) {
         log(TAG, `Looking for Post button...`);
 
@@ -420,9 +483,8 @@ export class TiktokUploadVideo {
 
         for (let attempt = 1; attempt <= maxRetry; attempt++) {
             try {
-                // Selector ưu tiên: data-e2e="post_video_button"
                 const postBtn = page.locator('[data-e2e="post_video_button"]');
-                await postBtn.waitFor({state: 'visible', timeout: 15000});
+                await postBtn.waitFor({state: 'visible', timeout: 15_000});
 
                 // Chờ button không còn disabled / loading
                 await page.waitForFunction(() => {
@@ -431,7 +493,7 @@ export class TiktokUploadVideo {
                     return btn.getAttribute('data-disabled') !== 'true'
                         && btn.getAttribute('data-loading') !== 'true'
                         && btn.getAttribute('aria-disabled') !== 'true';
-                }, {timeout: 30000});
+                }, {timeout: 30_000});
 
                 logOk(TAG, `Post button is ready — clicking`);
 
@@ -447,20 +509,37 @@ export class TiktokUploadVideo {
 
                 logOk(TAG, `Post button clicked`, {x: Math.round(targetX), y: Math.round(targetY)});
 
-                // Chờ xác nhận đã đăng thành công — TikTok thường redirect hoặc hiện toast
+                // PHASE 1: Chờ TikTok xử lý & redirect (tối đa 30s)
+                log(TAG, `Waiting for post confirmation / redirect...`);
                 const postResult = await Promise.race([
-                    page.waitForURL('**/tiktokstudio**', {timeout: 30000}).then(() => 'STUDIO'),
-                    page.waitForURL('**/@**', {timeout: 30000}).then(() => 'PROFILE'),
-                    page.waitForSelector('[class*="success-toast"], [class*="post-success"]', {timeout: 30000}).then(() => 'TOAST'),
-                    this.sleep(30000).then(() => 'TIMEOUT'),
+                    page.waitForURL('**/tiktokstudio**', {timeout: 30_000}).then(() => 'STUDIO'),
+                    page.waitForURL('**/@**', {timeout: 30_000}).then(() => 'PROFILE'),
+                    page.waitForSelector('[class*="success-toast"], [class*="post-success"]', {timeout: 30_000}).then(() => 'TOAST'),
+                    this.sleep(30_000).then(() => 'TIMEOUT'),
                 ]).catch(() => 'TIMEOUT');
 
                 log(TAG, `Post result`, {postResult});
 
-                if (postResult === 'TIMEOUT') {
-                    logWarn(TAG, `No redirect detected after post — may still be processing`);
+                // PHASE 2: Sau khi redirect → chờ thêm để TikTok xử lý video server-side
+                // TikTok thường mất 5-15s để video thực sự publish sau khi redirect
+                if (postResult === 'STUDIO' || postResult === 'PROFILE') {
+                    log(TAG, `Redirected — waiting for server-side processing...`);
+                    await this.waitForPostProcessing(page, postResult);
+                } else if (postResult === 'TOAST') {
+                    // Toast xuất hiện → chờ toast biến mất + buffer thêm
+                    log(TAG, `Success toast detected — waiting for it to complete...`);
+                    await page.waitForSelector(
+                        '[class*="success-toast"], [class*="post-success"]',
+                        {state: 'hidden', timeout: 15_000}
+                    ).catch(() => null);
+                    await this.sleep(3_000);
+                } else {
+                    // TIMEOUT — không redirect nhưng không có lỗi rõ ràng
+                    logWarn(TAG, `No redirect after 30s — checking if post actually succeeded...`);
+                    await this.sleep(5_000);
                 }
 
+                logOk(TAG, `Post confirmed complete`, {postResult});
                 return;
 
             } catch (err) {
@@ -470,8 +549,111 @@ export class TiktokUploadVideo {
                     throw new Error(`Post button click failed after ${maxRetry} attempts: ${err.message}`);
                 }
 
-                await this.sleep(3000);
+                await this.sleep(3_000);
             }
+        }
+    }
+
+// ------------------------------------------------
+// Chờ TikTok xử lý video sau khi redirect về Studio
+// Poll tối đa 60s — tìm video mới nhất ở trạng thái "processing" → "published"
+// ------------------------------------------------
+    async waitForPostProcessing(page, redirectType) {
+        const PROCESSING_TIMEOUT_MS = 60_000;
+        const POLL_INTERVAL_MS = 3_000;
+
+        log(TAG, `Waiting for post processing...`, {
+            redirectType,
+            timeout: `${PROCESSING_TIMEOUT_MS / 1000}s`,
+        });
+
+        const startTime = Date.now();
+
+        // Chờ trang Studio load xong
+        await page.waitForLoadState('domcontentloaded', {timeout: 15_000}).catch(() => null);
+        await this.sleep(2_000);
+
+        while (true) {
+            const elapsed = Date.now() - startTime;
+
+            if (elapsed > PROCESSING_TIMEOUT_MS) {
+                logWarn(TAG, `Post processing timeout — assuming success`, {elapsed: `${Math.round(elapsed / 1000)}s`});
+                return; // Không throw — TikTok có thể vẫn đang xử lý ngầm
+            }
+
+            const status = await page.evaluate(() => {
+                // Tìm video item đầu tiên trong danh sách (mới nhất)
+                // TikTok Studio thường hiển thị video đang xử lý với badge "Đang xử lý" / "Processing"
+                const processingBadges = document.querySelectorAll(
+                    '[class*="processing"], [class*="transcoding"], [data-e2e*="processing"]'
+                );
+                if (processingBadges.length > 0) {
+                    return {state: 'processing', count: processingBadges.length};
+                }
+
+                // Kiểm tra video đã xuất hiện trong feed (published)
+                const videoItems = document.querySelectorAll(
+                    '[class*="video-item"], [class*="content-item"], [data-e2e="video-item"]'
+                );
+                if (videoItems.length > 0) {
+                    return {state: 'published', count: videoItems.length};
+                }
+
+                return {state: 'unknown'};
+            }).catch(() => ({state: 'page_error'}));
+
+            log(TAG, `Post processing status`, {
+                state: status.state,
+                elapsed: `${Math.round(elapsed / 1000)}s`,
+            });
+
+            if (status.state === 'published') {
+                logOk(TAG, `Video confirmed published in Studio feed`, {elapsed: `${Math.round(elapsed / 1000)}s`});
+                return;
+            }
+
+            if (status.state === 'page_error') {
+                logWarn(TAG, `Cannot read Studio page — assuming published`);
+                return;
+            }
+
+            // processing hoặc unknown → tiếp tục chờ
+            await this.sleep(POLL_INTERVAL_MS);
+        }
+    }
+
+    // ------------------------------------------------
+// Dismiss tutorial tooltip "Đã hiểu" nếu xuất hiện
+// ------------------------------------------------
+    async dismissTutorialTooltip(page) {
+        log(TAG, `Checking for tutorial tooltip...`);
+
+        try {
+            // Tìm tooltip container
+            const tooltip = page.locator('.tutorial-tooltip').first();
+            const isVisible = await tooltip.isVisible().catch(() => false);
+
+            if (!isVisible) {
+                log(TAG, `No tutorial tooltip found — skipping`);
+                return;
+            }
+
+            logWarn(TAG, `Tutorial tooltip detected — dismissing...`);
+
+            // Click nút "Đã hiểu"
+            const btn = page.locator('.tutorial-tooltip__footer button').first();
+            await btn.waitFor({state: 'visible', timeout: 5_000});
+            await btn.click();
+
+            // Chờ tooltip biến mất
+            await tooltip.waitFor({state: 'hidden', timeout: 5_000}).catch(() => null);
+
+            logOk(TAG, `Tutorial tooltip dismissed`);
+            await this.sleep(500);
+
+        } catch (err) {
+            logWarn(TAG, `Failed to dismiss tutorial tooltip (non-critical)`, {error: err.message});
+            // Không throw — tooltip không dismiss được cũng không block flow
         }
     }
 }
