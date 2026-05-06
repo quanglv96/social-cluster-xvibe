@@ -217,8 +217,8 @@ export class FacebookPostGroup {
     }
 
     async switchToProfile(page, TAG = 'FB_POST_GROUP') {
+        await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
         log(TAG, `Switching back to PROFILE`);
-
         try {
             const profileBtn = await page.waitForSelector(
                 '[aria-label="Trang cá nhân của bạn"][role="button"]',

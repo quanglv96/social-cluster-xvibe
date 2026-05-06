@@ -128,6 +128,7 @@ export class FacebookPostStory {
     }
 
     async switchToProfile(page) {
+        await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
         log(TAG, `Switching back to PROFILE`);
 
         try {

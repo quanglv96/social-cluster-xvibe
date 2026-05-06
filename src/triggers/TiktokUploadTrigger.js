@@ -38,10 +38,6 @@ export class TiktokUploadTrigger {
         logOk(TAG, `TikTok upload done`);
 
         // Trả về format chuẩn giống các trigger khác
-        return {
-            success: true,
-            images: [], // TikTok không trả images, giữ để không lỗi router
-            ...result,
-        };
+        return {success: true};
     }
 }
