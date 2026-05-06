@@ -90,6 +90,8 @@ export class CapCutRenderVideo {
     }
 
     async _doRender(renderId, keyword, page) {
+        // ── B0. Clear storage trước khi bắt đầu ───────────────────────────
+        await this._clearStorage(renderId, page);
 
         // ── B1. Mở template explorer ───────────────────────────────────────
         log(renderId, `➡️ B1: Navigating to CapCut template explorer...`);
@@ -419,6 +421,221 @@ export class CapCutRenderVideo {
         }
     }
 
+
+    async _clearStorage(renderId, page) {
+        log(renderId, `🗑️ B0: Clearing storage...`);
+
+        try {
+            // ── B0-1. Vào trang chủ CapCut ────────────────────────────────
+            await page.goto('https://www.capcut.com/', { waitUntil: 'domcontentloaded' });
+            await page.waitForTimeout(3000);
+            await this._dismissModals(renderId, page);
+
+            // ── B0-2. Click vào workspace ──────────────────────────────────
+            log(renderId, `B0-1: Clicking workspace...`);
+            const workspace = await page.waitForSelector(
+                '.default-workspace-container',
+                { timeout: 10000 }
+            ).catch(() => null);
+
+            if (!workspace) {
+                logWarn(renderId, `B0: Workspace not found — skipping clear`);
+                return;
+            }
+            await workspace.click();
+            await page.waitForTimeout(2000);
+            logOk(renderId, `B0-1: Workspace clicked`);
+
+            // ── B0-3. Hover + check 1 item để trigger batch mode ──────────
+            log(renderId, `B0-2: Hovering first item to reveal checkbox...`);
+            const firstItem = await page.waitForSelector(
+                '[data-selectable-item-id] [role="button"]',
+                { timeout: 8000 }
+            ).catch(() => null);
+
+            if (!firstItem) {
+                logWarn(renderId, `B0: No items found in storage — skipping clear`);
+                return;
+            }
+
+            await firstItem.hover();
+            await page.waitForTimeout(500);
+
+            // Click checkbox của item đầu tiên
+            const checkboxClicked = await page.evaluate(() => {
+                const checkbox = document.querySelector(
+                    '[data-selectable-item-id] label[data-is-checkbox="true"]'
+                );
+                if (checkbox) { checkbox.click(); return true; }
+                return false;
+            });
+
+            if (!checkboxClicked) {
+                logWarn(renderId, `B0: Checkbox not found after hover — skipping clear`);
+                return;
+            }
+            await page.waitForTimeout(500);
+            logOk(renderId, `B0-2: First item checked`);
+
+            // ── B0-4. Click "chọn tất cả" (indeterminate checkbox) ────────
+            log(renderId, `B0-3: Selecting all items...`);
+            const selectAll = await page.waitForSelector(
+                'label.lv-checkbox-indeterminate.BatchOperation_Checkbox-uUOaB4',
+                { timeout: 5000 }
+            ).catch(() => null);
+
+            if (selectAll) {
+                await selectAll.click();
+                await page.waitForTimeout(500);
+                logOk(renderId, `B0-3: All items selected`);
+            } else {
+                logWarn(renderId, `B0-3: Select-all checkbox not found`);
+            }
+
+            // ── B0-5. Click "Chuyển vào Thùng rác" ───────────────────────
+            log(renderId, `B0-4: Moving to trash...`);
+            const trashBtn = await page.evaluate(() => {
+                const btns = document.querySelectorAll('button.ActionButton-twrnER');
+                const btn = [...btns].find(b => b.textContent.trim().includes('Chuyển vào Thùng rác'));
+                if (btn) { btn.click(); return true; }
+                return false;
+            });
+
+            if (!trashBtn) {
+                logWarn(renderId, `B0-4: Trash button not found`);
+                return;
+            }
+            await page.waitForTimeout(1000);
+
+            // ── B0-6. Xác nhận modal ──────────────────────────────────────
+            log(renderId, `B0-5: Confirming move to trash...`);
+            const confirmMoveBtn = await page.waitForFunction(
+                () => {
+                    const btns = document.querySelectorAll('button.lv-btn-primary');
+                    const btn = [...btns].find(b => b.textContent.trim() === 'Xác nhận');
+                    if (btn) { btn.click(); return true; }
+                    return false;
+                },
+                { timeout: 5000 }
+            ).catch(() => null);
+
+            await page.waitForTimeout(2000);
+            logOk(renderId, `B0-5: Moved to trash`);
+
+            // ── B0-7. Vào Thùng rác ───────────────────────────────────────
+            log(renderId, `B0-6: Opening trash...`);
+            const openTrash = await page.evaluate(() => {
+                const btns = document.querySelectorAll('button.ActionButton-twrnER');
+                const btn = [...btns].find(b => b.textContent.trim() === 'Thùng rác');
+                if (btn) { btn.click(); return true; }
+                return false;
+            });
+
+            if (!openTrash) {
+                logWarn(renderId, `B0-6: Trash button not found`);
+                return;
+            }
+            await page.waitForTimeout(2000);
+            logOk(renderId, `B0-6: Trash opened`);
+
+            // ── B0-8. Scroll xuống 3 lần để load thêm ────────────────────
+            log(renderId, `B0-7: Scrolling to load more trash items...`);
+            for (let i = 0; i < 3; i++) {
+                await page.evaluate(() => {
+                    // Thử các container scroll phổ biến của CapCut
+                    const container =
+                        document.querySelector('.DataView-lk2u27') ||
+                        document.querySelector('.DataViewBody-s8MTM1') ||
+                        document.querySelector('[class*="DataView"]') ||
+                        document.querySelector('[class*="AssetList"]') ||
+                        document.querySelector('main') ||
+                        document.documentElement;
+
+                    container.scrollBy({ top: 800, behavior: 'instant' });
+                });
+                await page.waitForTimeout(1000);
+            }
+            logOk(renderId, `B0-7: Scrolled down to load more items`);
+
+            // ── B0-9. Hover item trong trash để hiện checkbox ─────────────
+            log(renderId, `B0-8: Hovering trash item to reveal checkbox...`);
+            const trashItem = await page.waitForSelector(
+                '[data-selectable-item-id] [role="button"]',
+                { timeout: 8000 }
+            ).catch(() => null);
+
+            if (!trashItem) {
+                logOk(renderId, `B0: Trash is empty — nothing to delete`);
+                return;
+            }
+
+            await trashItem.hover();
+            await page.waitForTimeout(500);
+
+            const trashCheckbox = await page.evaluate(() => {
+                const checkbox = document.querySelector(
+                    '[data-selectable-item-id] label[data-is-checkbox="true"]'
+                );
+                if (checkbox) { checkbox.click(); return true; }
+                return false;
+            });
+
+            if (!trashCheckbox) {
+                logWarn(renderId, `B0-8: Trash checkbox not found`);
+                return;
+            }
+            await page.waitForTimeout(500);
+
+            // ── B0-10. Chọn tất cả trong trash ───────────────────────────
+            log(renderId, `B0-9: Selecting all trash items...`);
+            const selectAllTrash = await page.waitForSelector(
+                'label.lv-checkbox-indeterminate.BatchOperation_Checkbox-uUOaB4',
+                { timeout: 5000 }
+            ).catch(() => null);
+
+            if (selectAllTrash) {
+                await selectAllTrash.click();
+                await page.waitForTimeout(500);
+                logOk(renderId, `B0-9: All trash items selected`);
+            }
+
+            // ── B0-11. Click nút "Xóa" ────────────────────────────────────
+            log(renderId, `B0-10: Clicking delete...`);
+            const deleteBtn = await page.evaluate(() => {
+                const btns = document.querySelectorAll('button.ActionButton-twrnER');
+                const btn = [...btns].find(b => b.textContent.trim() === 'Xóa');
+                if (btn) { btn.click(); return true; }
+                return false;
+            });
+
+            if (!deleteBtn) {
+                logWarn(renderId, `B0-10: Delete button not found`);
+                return;
+            }
+            await page.waitForTimeout(1000);
+
+            // ── B0-12. Xác nhận xóa vĩnh viễn (danger button) ────────────
+            log(renderId, `B0-11: Confirming permanent delete...`);
+            await page.waitForFunction(
+                () => {
+                    const btn = document.querySelector('button.lv-btn-status-danger');
+                    if (btn && btn.textContent.trim() === 'Xác nhận') {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                },
+                { timeout: 5000 }
+            ).catch(() => logWarn(renderId, `B0-11: Danger confirm button not found`));
+
+            // Đợi xóa xong
+            await page.waitForTimeout(3000);
+            logOk(renderId, `B0: Storage cleared successfully`);
+
+        } catch (err) {
+            logWarn(renderId, `B0: Clear storage failed (non-critical) — continuing`, { error: err.message });
+        }
+    }
 
     async _unlinkBoxes(renderId, editorPage) {
         try {
