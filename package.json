@@ -39,6 +39,7 @@
     "nsis": {
       "oneClick": false,
       "perMachine": true,
+      "differentialPackage": true,
       "allowToChangeInstallationDirectory": true
     }
   },
