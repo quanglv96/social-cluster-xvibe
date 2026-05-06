@@ -310,98 +310,21 @@ export class TiktokAuth extends BaseAuth {
     // ------------------------------------------------
     async goToStudio(page) {
         log(TAG, `Navigating to TikTok Studio...`);
-        await this.safeGoto(page, 'https://www.tiktok.com/tiktokstudio?lang=vi-VN');
+        // await this.safeGoto(page, 'https://www.tiktok.com/tiktokstudio?lang=vi-VN');
+        await this.safeGoto(page, 'https://www.tiktok.com/tiktokstudio/upload?from=creator_center');
         await this.sleep(3000);
-        logOk(TAG, `TikTok Studio loaded`, { url: page.url() });
+        logOk(TAG, `Upload Studio loaded`, { url: page.url() });
     }
 
     // ------------------------------------------------
     // STEP 8: Click nút "Tải lên" trong Studio sidebar
     // ------------------------------------------------
-    async clickUploadButton(page) {
-        const maxRetry = 3;
-
-        log(TAG, `Looking for Upload button in Studio...`);
-
-        for (let attempt = 1; attempt <= maxRetry; attempt++) {
-            try {
-                log(TAG, `Upload button attempt`, { attempt: `${attempt}/${maxRetry}` });
-
-                // Ưu tiên selector ổn định nhất: data-tt + text content
-                // Fallback theo thứ tự từ cụ thể → tổng quát
-                const selectors = [
-                    'button[data-tt="Sidebar_Sidebar_Button"]:has(span.TUXText)',
-                    'button[data-tt="Sidebar_Sidebar_Button"]',
-                    // Fallback: tìm theo text "Tải lên" bên trong button
-                    'button:has(span.TUXText)',
-                ];
-
-                let uploadBtn = null;
-
-                for (const sel of selectors) {
-                    try {
-                        const candidates = page.locator(sel);
-                        const count = await candidates.count();
-
-                        for (let i = 0; i < count; i++) {
-                            const el = candidates.nth(i);
-                            const text = await el.innerText().catch(() => '');
-                            if (text.includes('Tải lên')) {
-                                uploadBtn = el;
-                                log(TAG, `Upload button found via selector`, { selector: sel, index: i });
-                                break;
-                            }
-                        }
-
-                        if (uploadBtn) break;
-                    } catch (_) {
-                        // thử selector tiếp
-                    }
-                }
-
-                if (!uploadBtn) throw new Error('Upload button not found in DOM');
-
-                // Chờ button visible & không còn disabled
-                await uploadBtn.waitFor({ state: 'visible', timeout: 10000 });
-
-                // Kiểm tra trạng thái disabled — chờ tối đa 10s nếu đang loading
-                let isDisabled = await uploadBtn.getAttribute('data-disabled');
-                if (isDisabled === 'true') {
-                    log(TAG, `Button is disabled/loading — waiting up to 10s...`);
-                    await page.waitForFunction(
-                        (btn) => btn.getAttribute('data-disabled') !== 'true',
-                        await uploadBtn.elementHandle(),
-                        { timeout: 10000 }
-                    ).catch(() => logWarn(TAG, `Button still disabled after wait — clicking anyway`));
-                }
-
-                const box = await uploadBtn.boundingBox();
-                if (!box) throw new Error('Cannot get bounding box for Upload button');
-
-                const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
-                const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
-
-                const currentPos = await page.evaluate(() => ({ x: window.mouseX || 0, y: window.mouseY || 0 }));
-                await this.moveMouseHumanLike(page, currentPos.x, currentPos.y, targetX, targetY);
-                await this.sleep(150 + Math.random() * 200);
-                await page.mouse.click(targetX, targetY);
-
-                await page.evaluate(({ x, y }) => { window.mouseX = x; window.mouseY = y; }, { x: targetX, y: targetY });
-
-                logOk(TAG, `Upload button clicked`, { x: Math.round(targetX), y: Math.round(targetY) });
-                await this.sleep(1500);
-                return;
-
-            } catch (err) {
-                logError(TAG, `Upload button attempt ${attempt} failed`, err);
-                if (attempt < maxRetry) {
-                    await this.sleep(2000 + Math.random() * 1000);
-                    continue;
-                }
-                throw new Error(`Click Upload button failed after ${maxRetry} attempts: ${err.message}`);
-            }
-        }
-    }
+    // async clickUploadButton(page) {
+    //     log(TAG, `Navigating directly to upload page...`);
+    //     await this.safeGoto(page, 'https://www.tiktok.com/tiktokstudio/upload?from=creator_center');
+    //     await this.sleep(2000);
+    //     logOk(TAG, `Upload page loaded`, {url: page.url()});
+    // }
 
     // ------------------------------------------------
     // Cookie login
@@ -504,10 +427,10 @@ export class TiktokAuth extends BaseAuth {
             log(TAG, `STEP 7: Navigate to TikTok Studio`);
             await this.goToStudio(page);
             logOk(TAG, `🎉 TikTok login complete — now in Studio`);
-
-            // STEP 8: Click nút Tải lên
-            log(TAG, `STEP 8: Click Upload button`);
-            await this.clickUploadButton(page);
+            //
+            // // STEP 8: Click nút Tải lên
+            // log(TAG, `STEP 8: Click Upload button`);
+            // await this.clickUploadButton(page);
 
             // Lưu cookie mới về backend
             const newCookies = await context.cookies();
