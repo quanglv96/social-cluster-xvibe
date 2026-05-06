@@ -3,6 +3,7 @@ import axios from "axios";
 import fs from "fs";
 import path from "path";
 import FormData from "form-data";
+import {runtimeConfig} from "../../../config/config.js";
 
 // =========================
 // Log Utils
@@ -37,13 +38,6 @@ function logOk(requestId, message, fields = {}) {
     sendToRenderer('ok', msg);
 }
 
-// =========================
-// Constants
-// =========================
-
-const CAPCUT_EXPLORER_URL = 'https://www.capcut.com/template-explorer';
-const LOCAL_IMAGE_API = 'http://localhost:1234/api/vibe/cap-cut/get-image';
-const LOCAL_RENDER_API = 'http://localhost:1234/api/vibe/cap-cut/render-video';
 const MAX_RETRY = 2;
 const MAX_TEMPLATE_RETRY = 2;
 
@@ -95,7 +89,7 @@ export class CapCutRenderVideo {
 
         // ── B1. Mở template explorer ───────────────────────────────────────
         log(renderId, `➡️ B1: Navigating to CapCut template explorer...`);
-        await page.goto(CAPCUT_EXPLORER_URL, {waitUntil: 'domcontentloaded'});
+        await page.goto(`${runtimeConfig.api.capCutExplorerUrl}`, {waitUntil: 'domcontentloaded'});
         await page.waitForTimeout(3000);
         await this._dismissModals(renderId, page);
         logOk(renderId, `Template explorer loaded`);
@@ -298,7 +292,7 @@ export class CapCutRenderVideo {
             logOk(renderId, `Slots found`, {slotCount});
 
             log(renderId, `📥 B5: Fetching images from local API...`, {slotCount});
-            const imageApiRes = await axios.get(`${LOCAL_IMAGE_API}/${slotCount}`).then(r => r.data);
+            const imageApiRes = await axios.get(`${runtimeConfig.api.apiGetImageVibe}/${slotCount}`).then(r => r.data);
             log(renderId, `📥 B5: API response`, {raw: JSON.stringify(imageApiRes).slice(0, 200)});
 
             const imageUrls = Array.isArray(imageApiRes) ? imageApiRes : (imageApiRes?.data?.images || imageApiRes?.images || []);
@@ -405,9 +399,11 @@ export class CapCutRenderVideo {
             log(renderId, `📡 Sending video to local render API...`);
             const form = new FormData();
             form.append('file', fs.createReadStream(filePath), 'output.mp4');
-            await axios.post(LOCAL_RENDER_API, form, {headers: form.getHeaders()});
+            await axios.post(`${runtimeConfig.api.apiUploadVideoCapCut}`, form, {headers: form.getHeaders()});
 
             logOk(renderId, `Video sent to render API`, {filePath});
+            // ── Xóa file đã tải sau khi gửi xong ─────────────────────────────
+            await this._cleanupDownloads(renderId, filePath);
             return filePath;
         } catch (err) {
             logError(renderId, `Editor page operation failed — closing tab`, err);
@@ -421,7 +417,42 @@ export class CapCutRenderVideo {
         }
     }
 
+    async _cleanupDownloads(renderId, currentFile = null) {
+        const downloadDir = '/tmp/capcut_downloads';
+        log(renderId, `🧹 Cleaning up download files...`);
 
+        try {
+            // Xóa file hiện tại vừa gửi xong
+            if (currentFile) {
+                try {
+                    await fs.promises.unlink(currentFile);
+                    logOk(renderId, `Deleted current file`, { file: currentFile });
+                } catch (err) {
+                    logWarn(renderId, `Failed to delete current file`, { file: currentFile, error: err.message });
+                }
+            }
+
+            // Dọn các file cũ còn sót (> 1 giờ) phòng trường hợp lần trước crash
+            const files = await fs.promises.readdir(downloadDir).catch(() => []);
+            const now = Date.now();
+            const ONE_HOUR = 60 * 60 * 1000;
+
+            for (const file of files) {
+                const filePath = path.join(downloadDir, file);
+                try {
+                    const stat = await fs.promises.stat(filePath);
+                    if (now - stat.mtimeMs > ONE_HOUR) {
+                        await fs.promises.unlink(filePath);
+                        log(renderId, `🗑️ Deleted stale file`, { file });
+                    }
+                } catch (_) {}
+            }
+
+            logOk(renderId, `Download cleanup done`);
+        } catch (err) {
+            logWarn(renderId, `Cleanup failed (non-critical)`, { error: err.message });
+        }
+    }
     async _clearStorage(renderId, page) {
         log(renderId, `🗑️ B0: Clearing storage...`);
 
