@@ -61,6 +61,8 @@ export class BrowserManager {
         const instance = await chromium.launch({
             headless: false,
             args: STEALTH_ARGS,
+            viewport:   null,
+            acceptDownloads: true
         });
 
         instance.on('disconnected', () => {

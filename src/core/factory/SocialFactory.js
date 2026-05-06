@@ -2,6 +2,7 @@ import { FacebookSocial } from '../social/facebook/FacebookSocial.js';
 import { TwitterSocial } from '../social/twitter/TwitterSocial.js';
 import {XvibeSocial} from "../social/xvibe/XvibeSocial.js";
 import {TiktokSocial} from "../social/tiktok/TiktokSocial.js";
+import {CapCutSocial} from "../social/capcut/CapCutSocial.js";
 
 export class SocialFactory {
 
@@ -22,7 +23,8 @@ export class SocialFactory {
                 return new TwitterSocial(context);
             case 'TIKTOK_UPLOAD':
                 return new TiktokSocial(context);
-
+            case 'RENDER_VIDEO':
+                return new CapCutSocial(context)
             case 'XVIBE_FLOW':
                 return new XvibeSocial(context);
             default:

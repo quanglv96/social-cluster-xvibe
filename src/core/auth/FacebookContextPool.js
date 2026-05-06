@@ -194,7 +194,8 @@ export class FacebookContextPool {
             await BrowserManager.applyVisibilityToPage(checkPage);
 
             await checkPage.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
-
+            // 👇 Thêm dòng này
+            await this.#dismissAutomationWarning(checkPage, requestId);
             const url       = checkPage.url();
             const cookies   = await context.cookies();
             const isLoggedIn =
@@ -253,5 +254,60 @@ export class FacebookContextPool {
 
     static #random(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+// =========================
+// PRIVATE: DISMISS AUTOMATION WARNING POPUP
+// =========================
+    static async #dismissAutomationWarning(page, requestId) {
+        try {
+            // Chờ tối đa 3s để popup xuất hiện — không throw nếu không có
+            const popup = await page.waitForSelector(
+                'div[role="dialog"], div[role="alertdialog"]',
+                { timeout: 3000 }
+            ).catch(() => null);
+
+            if (!popup) {
+                log(requestId, 'No automation warning popup detected');
+                return;
+            }
+
+            log(requestId, 'Automation warning popup detected → finding dismiss button');
+
+            // Tìm nút "Bỏ qua" / "Dismiss" bên trong popup theo text
+            const clicked = await page.evaluate(() => {
+                const dialogs = document.querySelectorAll(
+                    'div[role="dialog"], div[role="alertdialog"]'
+                );
+                for (const dialog of dialogs) {
+                    const buttons = dialog.querySelectorAll('[role="button"], button');
+                    for (const btn of buttons) {
+                        const text = btn.innerText?.trim().toLowerCase();
+                        if (
+                            text === 'bỏ qua'   ||
+                            text === 'dismiss'   ||
+                            text === 'đóng'      ||
+                            text === 'close'     ||
+                            text === 'ok'        ||
+                            text === 'tiếp tục'
+                        ) {
+                            btn.click();
+                            return text; // trả về text để log
+                        }
+                    }
+                }
+                return null;
+            });
+
+            if (clicked) {
+                logOk(requestId, 'Dismissed automation warning popup', { btn: clicked });
+                await page.waitForTimeout(800); // chờ animation đóng
+            } else {
+                logWarn(requestId, 'Popup found but no dismiss button matched — check selector');
+            }
+
+        } catch (err) {
+            logWarn(requestId, 'dismissAutomationWarning error (non-critical)', { error: err?.message });
+        }
     }
 }

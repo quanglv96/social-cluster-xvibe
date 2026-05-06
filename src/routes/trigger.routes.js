@@ -15,6 +15,7 @@ import {PartnerPostGroupTrigger} from "../triggers/PartnerPostGroupTrigger.js";
 import {TiktokUploadTrigger} from "../triggers/TiktokUploadTrigger.js";
 import {PostFbReelsTrigger} from "../triggers/PostFbReelsTrigger.js";
 import {nowIso} from "../utils/time.js";
+import {RenderVideoTrigger} from "../triggers/RenderVideoTrigger.js";
 
 const router = express.Router();
 
@@ -561,6 +562,9 @@ router.post('/upload-reel', (req, res) =>
 
 router.post('/partner-post-group', (req, res) =>
     enqueueRequest(req, res, 'PARTNER_POST_GROUP', PartnerPostGroupTrigger)
+);
+router.post('/render-video', (req, res) =>
+    enqueueRequest(req, res, 'RENDER_VIDEO', RenderVideoTrigger)
 );
 
 router.post('/bot/sleep', async (req, res) => {

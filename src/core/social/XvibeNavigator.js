@@ -89,7 +89,12 @@ export class XvibeNavigator {
         await this.page.mouse.wheel(0, 1200);
         await this.page.waitForTimeout(500);
 
-        const viewport = this.page.viewportSize();
+        const viewport = await this.page.evaluate(() => {
+            return {
+                width: window.innerWidth,
+                height: window.innerHeight
+            };
+        });
         if (!viewport) {
             logWarn(this.requestId, 'Viewport not available');
             return;
