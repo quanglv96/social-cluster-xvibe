@@ -51,7 +51,7 @@ export class CapCutRenderVideo {
         this.context = context;
     }
 
-    async render({id, keyword}, page) {
+    async render({id, keyword, index, request_type: requestType}, page) {
         if (!page) throw new Error('CapCutRenderVideo requires an event page');
 
         const renderId = id || `RENDER_${Date.now()}`;
@@ -66,11 +66,29 @@ export class CapCutRenderVideo {
             if (retryCount > 0) {
                 log(renderId, `🔄 Retry attempt`, {attempt: retryCount, max: MAX_RETRY});
             }
+
+            let filePath = null; // ✅ khai báo ngoài try để finally truy cập được
+
             try {
-                const videoFile = await this._doRender(renderId, keyword, page);
+                filePath = await this._doRender(renderId, keyword, page);
+
                 logOk(renderId, `Render finished`, {totalMs: Date.now() - startTime});
+                log(renderId, `📡 Sending video to local render API...`);
+
+                const form = new FormData();
+                form.append('file', fs.createReadStream(filePath), 'output.mp4');
+                form.append('index', Number(index));
+                form.append('type', String(requestType));
+                await axios.post(`${runtimeConfig.api.apiUploadVideoCapCut}`, form, {
+                    headers: form.getHeaders(),
+                    maxContentLength: Infinity,
+                    maxBodyLength: Infinity,
+                });
+
+                logOk(renderId, `Video sent to render API`, {filePath});
                 log(renderId, separator);
-                return {success: true, videoFile};
+                return {success: true, filePath};
+
             } catch (err) {
                 logError(renderId, `Render failed on attempt ${retryCount + 1}`, err);
                 if (retryCount >= MAX_RETRY) {
@@ -79,6 +97,10 @@ export class CapCutRenderVideo {
                     throw err;
                 }
                 retryCount++;
+
+            } finally {
+                // ✅ cleanup luôn chạy dù success hay fail, filePath có thể null nếu _doRender throw
+                await this._cleanupDownloads(renderId, filePath);
             }
         }
     }
@@ -396,14 +418,7 @@ export class CapCutRenderVideo {
             // ── B10. Đợi download + gửi file ──────────────────────────────────
             log(renderId, `⏳ B10: Monitoring export & waiting for download...`);
             const filePath = await this._waitForDownload(renderId, editorPage);
-            log(renderId, `📡 Sending video to local render API...`);
-            const form = new FormData();
-            form.append('file', fs.createReadStream(filePath), 'output.mp4');
-            await axios.post(`${runtimeConfig.api.apiUploadVideoCapCut}`, form, {headers: form.getHeaders()});
 
-            logOk(renderId, `Video sent to render API`, {filePath});
-            // ── Xóa file đã tải sau khi gửi xong ─────────────────────────────
-            await this._cleanupDownloads(renderId, filePath);
             return filePath;
         } catch (err) {
             logError(renderId, `Editor page operation failed — closing tab`, err);
@@ -426,9 +441,9 @@ export class CapCutRenderVideo {
             if (currentFile) {
                 try {
                     await fs.promises.unlink(currentFile);
-                    logOk(renderId, `Deleted current file`, { file: currentFile });
+                    logOk(renderId, `Deleted current file`, {file: currentFile});
                 } catch (err) {
-                    logWarn(renderId, `Failed to delete current file`, { file: currentFile, error: err.message });
+                    logWarn(renderId, `Failed to delete current file`, {file: currentFile, error: err.message});
                 }
             }
 
@@ -443,22 +458,24 @@ export class CapCutRenderVideo {
                     const stat = await fs.promises.stat(filePath);
                     if (now - stat.mtimeMs > ONE_HOUR) {
                         await fs.promises.unlink(filePath);
-                        log(renderId, `🗑️ Deleted stale file`, { file });
+                        log(renderId, `🗑️ Deleted stale file`, {file});
                     }
-                } catch (_) {}
+                } catch (_) {
+                }
             }
 
             logOk(renderId, `Download cleanup done`);
         } catch (err) {
-            logWarn(renderId, `Cleanup failed (non-critical)`, { error: err.message });
+            logWarn(renderId, `Cleanup failed (non-critical)`, {error: err.message});
         }
     }
+
     async _clearStorage(renderId, page) {
         log(renderId, `🗑️ B0: Clearing storage...`);
 
         try {
             // ── B0-1. Vào trang chủ CapCut ────────────────────────────────
-            await page.goto('https://www.capcut.com/', { waitUntil: 'domcontentloaded' });
+            await page.goto('https://www.capcut.com/', {waitUntil: 'domcontentloaded'});
             await page.waitForTimeout(3000);
             await this._dismissModals(renderId, page);
 
@@ -466,7 +483,7 @@ export class CapCutRenderVideo {
             log(renderId, `B0-1: Clicking workspace...`);
             const workspace = await page.waitForSelector(
                 '.default-workspace-container',
-                { timeout: 10000 }
+                {timeout: 10000}
             ).catch(() => null);
 
             if (!workspace) {
@@ -481,7 +498,7 @@ export class CapCutRenderVideo {
             log(renderId, `B0-2: Hovering first item to reveal checkbox...`);
             const firstItem = await page.waitForSelector(
                 '[data-selectable-item-id] [role="button"]',
-                { timeout: 8000 }
+                {timeout: 8000}
             ).catch(() => null);
 
             if (!firstItem) {
@@ -497,7 +514,10 @@ export class CapCutRenderVideo {
                 const checkbox = document.querySelector(
                     '[data-selectable-item-id] label[data-is-checkbox="true"]'
                 );
-                if (checkbox) { checkbox.click(); return true; }
+                if (checkbox) {
+                    checkbox.click();
+                    return true;
+                }
                 return false;
             });
 
@@ -512,7 +532,7 @@ export class CapCutRenderVideo {
             log(renderId, `B0-3: Selecting all items...`);
             const selectAll = await page.waitForSelector(
                 'label.lv-checkbox-indeterminate.BatchOperation_Checkbox-uUOaB4',
-                { timeout: 5000 }
+                {timeout: 5000}
             ).catch(() => null);
 
             if (selectAll) {
@@ -528,7 +548,10 @@ export class CapCutRenderVideo {
             const trashBtn = await page.evaluate(() => {
                 const btns = document.querySelectorAll('button.ActionButton-twrnER');
                 const btn = [...btns].find(b => b.textContent.trim().includes('Chuyển vào Thùng rác'));
-                if (btn) { btn.click(); return true; }
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
                 return false;
             });
 
@@ -544,10 +567,13 @@ export class CapCutRenderVideo {
                 () => {
                     const btns = document.querySelectorAll('button.lv-btn-primary');
                     const btn = [...btns].find(b => b.textContent.trim() === 'Xác nhận');
-                    if (btn) { btn.click(); return true; }
+                    if (btn) {
+                        btn.click();
+                        return true;
+                    }
                     return false;
                 },
-                { timeout: 5000 }
+                {timeout: 5000}
             ).catch(() => null);
 
             await page.waitForTimeout(2000);
@@ -558,7 +584,10 @@ export class CapCutRenderVideo {
             const openTrash = await page.evaluate(() => {
                 const btns = document.querySelectorAll('button.ActionButton-twrnER');
                 const btn = [...btns].find(b => b.textContent.trim() === 'Thùng rác');
-                if (btn) { btn.click(); return true; }
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
                 return false;
             });
 
@@ -582,7 +611,7 @@ export class CapCutRenderVideo {
                         document.querySelector('main') ||
                         document.documentElement;
 
-                    container.scrollBy({ top: 800, behavior: 'instant' });
+                    container.scrollBy({top: 800, behavior: 'instant'});
                 });
                 await page.waitForTimeout(1000);
             }
@@ -592,7 +621,7 @@ export class CapCutRenderVideo {
             log(renderId, `B0-8: Hovering trash item to reveal checkbox...`);
             const trashItem = await page.waitForSelector(
                 '[data-selectable-item-id] [role="button"]',
-                { timeout: 8000 }
+                {timeout: 8000}
             ).catch(() => null);
 
             if (!trashItem) {
@@ -607,7 +636,10 @@ export class CapCutRenderVideo {
                 const checkbox = document.querySelector(
                     '[data-selectable-item-id] label[data-is-checkbox="true"]'
                 );
-                if (checkbox) { checkbox.click(); return true; }
+                if (checkbox) {
+                    checkbox.click();
+                    return true;
+                }
                 return false;
             });
 
@@ -621,7 +653,7 @@ export class CapCutRenderVideo {
             log(renderId, `B0-9: Selecting all trash items...`);
             const selectAllTrash = await page.waitForSelector(
                 'label.lv-checkbox-indeterminate.BatchOperation_Checkbox-uUOaB4',
-                { timeout: 5000 }
+                {timeout: 5000}
             ).catch(() => null);
 
             if (selectAllTrash) {
@@ -635,7 +667,10 @@ export class CapCutRenderVideo {
             const deleteBtn = await page.evaluate(() => {
                 const btns = document.querySelectorAll('button.ActionButton-twrnER');
                 const btn = [...btns].find(b => b.textContent.trim() === 'Xóa');
-                if (btn) { btn.click(); return true; }
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
                 return false;
             });
 
@@ -656,7 +691,7 @@ export class CapCutRenderVideo {
                     }
                     return false;
                 },
-                { timeout: 5000 }
+                {timeout: 5000}
             ).catch(() => logWarn(renderId, `B0-11: Danger confirm button not found`));
 
             // Đợi xóa xong
@@ -664,7 +699,7 @@ export class CapCutRenderVideo {
             logOk(renderId, `B0: Storage cleared successfully`);
 
         } catch (err) {
-            logWarn(renderId, `B0: Clear storage failed (non-critical) — continuing`, { error: err.message });
+            logWarn(renderId, `B0: Clear storage failed (non-critical) — continuing`, {error: err.message});
         }
     }
 
@@ -871,7 +906,7 @@ export class CapCutRenderVideo {
                     );
                     return ![...slots].some(slot => slot.querySelector('.lv-icon-loading'));
                 },
-                { timeout: 30000, polling: 500 }
+                {timeout: 30000, polling: 500}
             );
             logOk(renderId, `All slots finished loading`);
         } catch (_) {
@@ -890,31 +925,36 @@ export class CapCutRenderVideo {
                 slots.forEach((slot, i) => {
                     // 1. Vẫn đang loading
                     if (slot.querySelector('.lv-icon-loading')) {
-                        broken.push(i); return;
+                        broken.push(i);
+                        return;
                     }
                     // 2. Có button lỗi (danger)
                     if (slot.querySelector('button.lv-btn-status-danger')) {
-                        broken.push(i); return;
+                        broken.push(i);
+                        return;
                     }
                     const img = slot.querySelector('img.tier-sprite-img');
                     // 3. Không có img
                     if (!img) {
-                        broken.push(i); return;
+                        broken.push(i);
+                        return;
                     }
                     // 4. src không phải blob
                     if (!img.src.startsWith('blob:')) {
-                        broken.push(i); return;
+                        broken.push(i);
+                        return;
                     }
                     // 5. src không đổi so với ảnh mẫu gốc → chưa upload thành công
                     if (origSrcs[i] && img.src === origSrcs[i]) {
-                        broken.push(i); return;
+                        broken.push(i);
+                        return;
                     }
                 });
                 return broken;
             }, originalSrcs);
 
             if (!brokenIndexes.length) {
-                logOk(renderId, `All slots verified OK`, { attempt });
+                logOk(renderId, `All slots verified OK`, {attempt});
                 return;
             }
 
@@ -925,12 +965,12 @@ export class CapCutRenderVideo {
 
             for (const slotIdx of brokenIndexes) {
                 const imageUrl = imageUrls[slotIdx % imageUrls.length];
-                log(renderId, `🔄 Refixing slot`, { slot: slotIdx + 1, imageUrl });
+                log(renderId, `🔄 Refixing slot`, {slot: slotIdx + 1, imageUrl});
 
                 let tmpImgPath = null;
                 try {
-                    const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-                    tmpImgPath   = path.join('/tmp', `capcut_refix_${Date.now()}_${slotIdx}.jpg`);
+                    const imgRes = await axios.get(imageUrl, {responseType: 'arraybuffer'});
+                    tmpImgPath = path.join('/tmp', `capcut_refix_${Date.now()}_${slotIdx}.jpg`);
                     await fs.promises.writeFile(tmpImgPath, imgRes.data);
 
                     await editorPage.evaluate((idx) => {
@@ -939,7 +979,7 @@ export class CapCutRenderVideo {
                         );
                         const slot = slots[idx];
                         if (!slot) return;
-                        slot.scrollIntoView({ behavior: 'instant', block: 'center' });
+                        slot.scrollIntoView({behavior: 'instant', block: 'center'});
                         const target = slot.querySelector('.tier-sprite, img.tier-sprite-img, .segment-item-thumbnail')
                             || slot;
                         target.click();
@@ -952,17 +992,17 @@ export class CapCutRenderVideo {
                         const fileInput = editorPage.locator(
                             `.mutable-batch-replace-panel-list .segment-item[data-mutableid]:nth-child(${slotIdx + 1}) input.mutable-file-uploader[type="file"]`
                         );
-                        await fileInput.waitFor({ state: 'attached', timeout: 4000 });
+                        await fileInput.waitFor({state: 'attached', timeout: 4000});
                         await fileInput.setInputFiles(tmpImgPath);
                         uploaded = true;
                     } catch (_) {
                         try {
                             const fallback = editorPage.locator('input.mutable-file-uploader[type="file"]').first();
-                            await fallback.waitFor({ state: 'attached', timeout: 4000 });
+                            await fallback.waitFor({state: 'attached', timeout: 4000});
                             await fallback.setInputFiles(tmpImgPath);
                             uploaded = true;
                         } catch (e2) {
-                            logWarn(renderId, `No file input found for slot`, { slot: slotIdx + 1, error: e2.message });
+                            logWarn(renderId, `No file input found for slot`, {slot: slotIdx + 1, error: e2.message});
                         }
                     }
 
@@ -970,7 +1010,7 @@ export class CapCutRenderVideo {
                         // Đợi loading → xong → src thay đổi so với original
                         try {
                             await editorPage.waitForFunction(
-                                ({ idx, origSrcs }) => {
+                                ({idx, origSrcs}) => {
                                     const slots = document.querySelectorAll(
                                         '.mutable-batch-replace-panel-list .segment-item[data-mutableid]'
                                     );
@@ -984,19 +1024,20 @@ export class CapCutRenderVideo {
                                     if (origSrcs[idx] && img.src === origSrcs[idx]) return false;
                                     return true;
                                 },
-                                { idx: slotIdx, origSrcs: originalSrcs },
-                                { timeout: 15000, polling: 500 }
+                                {idx: slotIdx, origSrcs: originalSrcs},
+                                {timeout: 15000, polling: 500}
                             );
-                            logOk(renderId, `Slot refixed & confirmed`, { slot: slotIdx + 1 });
+                            logOk(renderId, `Slot refixed & confirmed`, {slot: slotIdx + 1});
                         } catch (_) {
-                            logWarn(renderId, `Slot upload sent but src unchanged`, { slot: slotIdx + 1 });
+                            logWarn(renderId, `Slot upload sent but src unchanged`, {slot: slotIdx + 1});
                         }
                     }
 
                 } catch (err) {
-                    logWarn(renderId, `Failed to refix slot`, { slot: slotIdx + 1, error: err.message });
+                    logWarn(renderId, `Failed to refix slot`, {slot: slotIdx + 1, error: err.message});
                 } finally {
-                    if (tmpImgPath) fs.unlink(tmpImgPath, () => {});
+                    if (tmpImgPath) fs.unlink(tmpImgPath, () => {
+                    });
                 }
             }
 
@@ -1010,11 +1051,23 @@ export class CapCutRenderVideo {
             );
             const broken = [];
             slots.forEach((slot, i) => {
-                if (slot.querySelector('.lv-icon-loading'))            { broken.push(i); return; }
-                if (slot.querySelector('button.lv-btn-status-danger')) { broken.push(i); return; }
+                if (slot.querySelector('.lv-icon-loading')) {
+                    broken.push(i);
+                    return;
+                }
+                if (slot.querySelector('button.lv-btn-status-danger')) {
+                    broken.push(i);
+                    return;
+                }
                 const img = slot.querySelector('img.tier-sprite-img');
-                if (!img || !img.src.startsWith('blob:'))              { broken.push(i); return; }
-                if (origSrcs[i] && img.src === origSrcs[i])           { broken.push(i); return; }
+                if (!img || !img.src.startsWith('blob:')) {
+                    broken.push(i);
+                    return;
+                }
+                if (origSrcs[i] && img.src === origSrcs[i]) {
+                    broken.push(i);
+                    return;
+                }
             });
             return broken;
         }, originalSrcs);
@@ -1059,7 +1112,7 @@ export class CapCutRenderVideo {
                     }
                     return false;
                 },
-                {timeout: 2000}
+                {timeout: 1000}
             ),
 
             // 2. Service guide tooltip
@@ -1073,7 +1126,7 @@ export class CapCutRenderVideo {
                     }
                     return false;
                 },
-                {timeout: 2000}
+                {timeout: 1000}
             ),
 
             // 3. Pippit guide → "Để sau"
@@ -1088,7 +1141,7 @@ export class CapCutRenderVideo {
                     }
                     return false;
                 },
-                {timeout: 2000}
+                {timeout: 1000}
             ),
 
         ]);
