@@ -667,7 +667,7 @@ export class TiktokUploadVideo {
 // Chờ TikTok kiểm tra video xong (status-tip không còn "Đang kiểm tra")
 // ------------------------------------------------
     async waitForVideoCheck(page) {
-        const TIMEOUT_MS = 15 * 60 * 1000;
+        const TIMEOUT_MS = 5 * 60 * 1000;
         const POLL_INTERVAL_MS = 3_000;
 
         log(TAG, `Waiting for video check to complete...`, {timeout: '15min'});
@@ -682,39 +682,33 @@ export class TiktokUploadVideo {
             }
 
             const status = await page.evaluate(() => {
-                const tip = document.querySelector('span.status-tip');
-                if (!tip) return {state: 'not_found'};
+                // Tìm div status-checking đang hiển thị
+                const checkingEl = document.querySelector('.status-result.status-checking[data-show="true"]');
+                if (checkingEl) return {state: 'checking', text: checkingEl.querySelector('.status-tip')?.textContent?.trim()};
 
-                const text = tip.textContent?.trim() || '';
-                const inlineColor = tip.style.color || ''; // "var(--ui-text-success)" hoặc "var(--ui-text-3)"
+                // Thành công
+                const successEl = document.querySelector('.status-result.status-success[data-show="true"]');
+                if (successEl) return {state: 'success', text: successEl.querySelector('.status-tip')?.textContent?.trim()};
 
-                if (text.includes('Đang kiểm tra')) {
-                    return {state: 'checking', text};
-                }
+                // Lỗi hệ thống
+                const errorEl = document.querySelector('.status-result.status-error[data-show="true"]');
+                if (errorEl) return {state: 'error', text: errorEl.querySelector('.status-tip')?.textContent?.trim()};
 
-                // Check text trước — đây là cách chắc chắn nhất
-                if (text.includes('Không phát hiện vấn đề')) {
-                    return {state: 'success', text};
-                }
+                // Cảnh báo — vẫn có thể đăng nhưng log warn
+                const warnEl = document.querySelector('.status-result.status-warn[data-show="true"]');
+                if (warnEl) return {state: 'warn', text: warnEl.querySelector('.status-tip')?.textContent?.trim()};
 
-                // Check màu đỏ/lỗi qua CSS variable name
-                if (
-                    inlineColor.includes('ui-text-danger') ||
-                    inlineColor.includes('ui-text-error') ||
-                    text.includes('vi phạm') ||
-                    text.includes('không được phép') ||
-                    text.includes('bị từ chối')
-                ) {
-                    return {state: 'error', text};
-                }
+                // ready — chưa check hoặc hết lượt
+                const readyEl = document.querySelector('.status-result.status-ready[data-show="true"]');
+                if (readyEl) return {state: 'ready', text: readyEl.querySelector('.status-tip')?.textContent?.trim()};
 
-                return {state: 'unknown', text, color: inlineColor};
+                return {state: 'not_found'};
             });
 
             log(TAG, `Video check status`, {
                 state: status.state,
                 elapsed: `${Math.round(elapsed / 1000)}s`,
-                text: status.text,
+                text: status.text?.slice(0, 80),
             });
 
             if (status.state === 'success') {
@@ -722,18 +716,17 @@ export class TiktokUploadVideo {
                 return;
             }
 
-            // ❌ Có lỗi → dừng, không đăng
             if (status.state === 'error') {
-                throw new Error(`Video check failed — TikTok detected a violation: ${status.text}`);
+                throw new Error(`Video check failed — system error: ${status.text}`);
             }
 
-            if (status.state === 'not_found') {
-                logWarn(TAG, `status-tip not found — skipping check`);
-                return;
+            if (status.state === 'warn') {
+                logWarn(TAG, `Video check warned — proceeding anyway`, {text: status.text});
+                return; // Vẫn đăng được
             }
 
-            if (status.state === 'unknown') {
-                logWarn(TAG, `Unknown check status — proceeding`, {text: status.text});
+            if (status.state === 'ready' || status.state === 'not_found') {
+                logWarn(TAG, `Video check not active — skipping`, {state: status.state});
                 return;
             }
 
