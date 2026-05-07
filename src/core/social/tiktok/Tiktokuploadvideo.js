@@ -118,6 +118,10 @@ export class TiktokUploadVideo {
             log(TAG, `STEP 5: Scrolling down 2 times...`);
             await this.scrollDown(page, 2);
 
+            // STEP 5.5: Chờ TikTok kiểm tra video xong
+            log(TAG, `STEP 5.5: Waiting for video check...`);
+            await this.waitForVideoCheck(page);
+
             log(TAG, `STEP 6: Clicking Post button...`);
             await this.clickPostButton(page);
 
@@ -656,6 +660,72 @@ export class TiktokUploadVideo {
         } catch (err) {
             logWarn(TAG, `Failed to dismiss tutorial tooltip (non-critical)`, {error: err.message});
             // Không throw — tooltip không dismiss được cũng không block flow
+        }
+    }
+
+    // ------------------------------------------------
+// Chờ TikTok kiểm tra video xong (status-tip không còn "Đang kiểm tra")
+// ------------------------------------------------
+    async waitForVideoCheck(page) {
+        const TIMEOUT_MS = 15 * 60 * 1000; // 15 phút — video dài có thể mất nhiều thời gian
+        const POLL_INTERVAL_MS = 3_000;
+
+        log(TAG, `Waiting for video check to complete...`, {timeout: '15min'});
+        const startTime = Date.now();
+
+        while (true) {
+            const elapsed = Date.now() - startTime;
+
+            if (elapsed > TIMEOUT_MS) {
+                logWarn(TAG, `Video check timed out — proceeding anyway`, {elapsed: `${Math.round(elapsed / 1000)}s`});
+                return;
+            }
+
+            const status = await page.evaluate(() => {
+                const tip = document.querySelector('span.status-tip');
+                if (!tip) return {state: 'not_found'};
+
+                const text = tip.textContent?.trim() || '';
+                const color = tip.style.color || '';
+
+                if (text.includes('Đang kiểm tra')) {
+                    return {state: 'checking', text};
+                }
+
+                if (color.includes('ui-text-success') || text.includes('Không phát hiện vấn đề')) {
+                    return {state: 'success', text};
+                }
+
+                // Có thể có lỗi (màu đỏ hoặc text khác)
+                return {state: 'unknown', text, color};
+            });
+
+            log(TAG, `Video check status`, {
+                state: status.state,
+                elapsed: `${Math.round(elapsed / 1000)}s`,
+            });
+
+            if (status.state === 'success') {
+                logOk(TAG, `Video check passed`, {text: status.text});
+                return;
+            }
+
+            if (status.state === 'not_found') {
+                logWarn(TAG, `status-tip not found — skipping check`);
+                return;
+            }
+
+            if (status.state === 'unknown') {
+                logWarn(TAG, `Unknown check status — proceeding`, {text: status.text});
+                return;
+            }
+
+            // state === 'checking' → tiếp tục chờ, log mỗi 30s
+            if (elapsed % 30000 < POLL_INTERVAL_MS) {
+                log(TAG, `Still checking...`, {elapsed: `${Math.round(elapsed / 1000)}s`});
+            }
+
+            await this.sleep(POLL_INTERVAL_MS);
         }
     }
 }
