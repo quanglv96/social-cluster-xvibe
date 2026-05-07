@@ -415,18 +415,11 @@ export class TiktokUploadVideo {
     // STEP 4: Điền caption vào DraftEditor
     // ------------------------------------------------
     async fillCaption(page, caption) {
-        if (!caption) {
-            log(TAG, `No caption provided — skipping`);
-            return;
-        }
-
         log(TAG, `Filling caption...`, {length: caption.length});
-
         // Tìm contenteditable của DraftEditor trong caption container
         const captionEditor = page.locator(
             '[data-e2e="caption_container"] .public-DraftEditor-content'
         );
-
         await captionEditor.waitFor({state: 'visible', timeout: 15000});
 
         // Click vào editor để focus
@@ -439,7 +432,10 @@ export class TiktokUploadVideo {
         await page.keyboard.up('Control');
         await page.keyboard.press('Backspace');
         await this.sleep(300);
-
+        if (!caption) {
+            log(TAG, `No caption provided — skipping`);
+            return;
+        }
         // Gõ caption từng ký tự (human-like)
         for (const char of caption) {
             await page.keyboard.type(char, {delay: 30 + Math.random() * 50});
@@ -460,9 +456,21 @@ export class TiktokUploadVideo {
     async scrollDown(page, times = 2) {
         log(TAG, `Scrolling down`, {times});
 
+        // Click vào giữa trang trước để đảm bảo page có focus
+        const viewport = page.viewportSize();
+        const centerX = viewport ? viewport.width / 2 : 760;
+        const centerY = viewport ? viewport.height / 2 : 400;
+        await page.mouse.click(centerX, centerY);
+        await this.sleep(300);
+
         for (let i = 0; i < times; i++) {
             await page.mouse.wheel(0, 500);
-            await this.sleep(800);
+            await this.sleep(500);
+
+            // Fallback: dùng keyboard PageDown
+            await page.keyboard.press('PageDown');
+            await this.sleep(500);
+
             log(TAG, `Scrolled`, {step: `${i + 1}/${times}`});
         }
 
@@ -474,8 +482,6 @@ export class TiktokUploadVideo {
     // STEP 6: Click nút Đăng
     // ------------------------------------------------
     // ------------------------------------------------
-// STEP 6: Click nút Đăng
-// ------------------------------------------------
     async clickPostButton(page) {
         log(TAG, `Looking for Post button...`);
 
