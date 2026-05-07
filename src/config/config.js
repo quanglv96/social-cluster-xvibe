@@ -95,7 +95,7 @@ function buildApi(host) {
         apiLogCheckPoint: `${host}/api/internal/log-check-point`,
         apiRegisterSever: `${host}/api/register-sever-social`,
         apiCallbackResponse: `${host}/api/social-callback`,
-        apiGetVideo: `${host}/api/reel/`,
+        apiGetVideo: `${host}/api/reel`,
         apiNotifyCaptcha: `${host}/api/internal/notify-captcha`,
         capCutExplorerUrl: `https://www.capcut.com/template-explorer`,
         apiGetImageVibe:`${host}/api/cap-cut/get-image`,

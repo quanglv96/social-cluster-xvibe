@@ -187,7 +187,7 @@ export class TiktokUploadVideo {
     // ------------------------------------------------
     async downloadVideo(mediaId) {
         log(TAG, `Downloading video`, {mediaId});
-        const hostUrl = runtimeConfig.api.apiGetVideo + mediaId
+        const hostUrl = runtimeConfig.api.apiGetVideo + '/' + mediaId;
         const response = await axios.get(hostUrl, {
             responseType: 'arraybuffer',
             timeout: 120_000, // 2 phút cho video nặng
