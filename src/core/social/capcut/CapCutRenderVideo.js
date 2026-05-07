@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import FormData from "form-data";
 import {runtimeConfig} from "../../../config/config.js";
+import os from "os";
 
 // =========================
 // Log Utils
@@ -347,7 +348,7 @@ export class CapCutRenderVideo {
                 try {
                     // Download ảnh về tmp trong Node.js — tránh fetch trong browser context
                     const imgRes = await axios.get(imageUrl, {responseType: 'arraybuffer'});
-                    tmpImgPath = path.join('/tmp', `capcut_img_${Date.now()}_${i}.jpg`);
+                    tmpImgPath = path.join(os.tmpdir(), `capcut_img_${Date.now()}_${i}.jpg`);
                     await fs.promises.writeFile(tmpImgPath, imgRes.data);
 
                     // Dùng setInputFiles thay vì evaluate + fetch
@@ -433,7 +434,7 @@ export class CapCutRenderVideo {
     }
 
     async _cleanupDownloads(renderId, currentFile = null) {
-        const downloadDir = '/tmp/capcut_downloads';
+        const downloadDir = path.join(os.tmpdir(), 'capcut_downloads');
         log(renderId, `🧹 Cleaning up download files...`);
 
         try {
@@ -970,7 +971,7 @@ export class CapCutRenderVideo {
                 let tmpImgPath = null;
                 try {
                     const imgRes = await axios.get(imageUrl, {responseType: 'arraybuffer'});
-                    tmpImgPath = path.join('/tmp', `capcut_refix_${Date.now()}_${slotIdx}.jpg`);
+                    tmpImgPath = path.join(os.tmpdir(), `capcut_refix_${Date.now()}_${slotIdx}.jpg`);
                     await fs.promises.writeFile(tmpImgPath, imgRes.data);
 
                     await editorPage.evaluate((idx) => {
@@ -1161,13 +1162,9 @@ export class CapCutRenderVideo {
         const download = await page.waitForEvent('download', {timeout: TIMEOUT_MS});
         log(renderId, `⏳ Download started`, {filename: download.suggestedFilename()});
 
-        const downloadPath = path.join(
-            '/tmp/capcut_downloads',
-            `${Date.now()}_${download.suggestedFilename()}`
-        );
-
+        const downloadPath = path.join(os.tmpdir(), 'capcut_downloads', `${Date.now()}_${download.suggestedFilename()}`);
         // Đảm bảo thư mục tồn tại
-        await fs.promises.mkdir('/tmp/capcut_downloads', {recursive: true});
+        await fs.promises.mkdir(path.join(os.tmpdir(), 'capcut_downloads'), {recursive: true});
         await download.saveAs(downloadPath);
 
         logOk(renderId, `Download completed`, {downloadPath});
