@@ -667,7 +667,7 @@ export class TiktokUploadVideo {
 // Chờ TikTok kiểm tra video xong (status-tip không còn "Đang kiểm tra")
 // ------------------------------------------------
     async waitForVideoCheck(page) {
-        const TIMEOUT_MS = 15 * 60 * 1000; // 15 phút — video dài có thể mất nhiều thời gian
+        const TIMEOUT_MS = 15 * 60 * 1000;
         const POLL_INTERVAL_MS = 3_000;
 
         log(TAG, `Waiting for video check to complete...`, {timeout: '15min'});
@@ -686,28 +686,46 @@ export class TiktokUploadVideo {
                 if (!tip) return {state: 'not_found'};
 
                 const text = tip.textContent?.trim() || '';
-                const color = tip.style.color || '';
+                const computedColor = getComputedStyle(tip).color;
+                const inlineColor = tip.style.color || '';
 
                 if (text.includes('Đang kiểm tra')) {
                     return {state: 'checking', text};
                 }
 
-                if (color.includes('ui-text-success') || text.includes('Không phát hiện vấn đề')) {
+                if (inlineColor.includes('ui-text-success') || text.includes('Không phát hiện vấn đề')) {
                     return {state: 'success', text};
                 }
 
-                // Có thể có lỗi (màu đỏ hoặc text khác)
-                return {state: 'unknown', text, color};
+                // Phát hiện màu đỏ / cảnh báo lỗi
+                if (
+                    inlineColor.includes('ui-text-danger') ||
+                    inlineColor.includes('ui-text-error') ||
+                    inlineColor.includes('red') ||
+                    text.includes('vi phạm') ||
+                    text.includes('không được phép') ||
+                    text.includes('bị từ chối')
+                ) {
+                    return {state: 'error', text};
+                }
+
+                return {state: 'unknown', text, color: inlineColor};
             });
 
             log(TAG, `Video check status`, {
                 state: status.state,
                 elapsed: `${Math.round(elapsed / 1000)}s`,
+                text: status.text,
             });
 
             if (status.state === 'success') {
                 logOk(TAG, `Video check passed`, {text: status.text});
                 return;
+            }
+
+            // ❌ Có lỗi → dừng, không đăng
+            if (status.state === 'error') {
+                throw new Error(`Video check failed — TikTok detected a violation: ${status.text}`);
             }
 
             if (status.state === 'not_found') {
@@ -720,7 +738,7 @@ export class TiktokUploadVideo {
                 return;
             }
 
-            // state === 'checking' → tiếp tục chờ, log mỗi 30s
+            // checking → tiếp tục chờ, log mỗi 30s
             if (elapsed % 30000 < POLL_INTERVAL_MS) {
                 log(TAG, `Still checking...`, {elapsed: `${Math.round(elapsed / 1000)}s`});
             }
