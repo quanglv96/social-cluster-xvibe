@@ -76,21 +76,7 @@ export class TwitterCrawler {
         try {
             await page.waitForTimeout(3000);
 
-            // ✅ Snapshot ảnh mới nhất TRƯỚC KHI scroll
-            const firstImageData = await page.evaluate(() => {
-                const node = document.querySelector('#verticalGridItem-0-profile-grid-0');
-                if (!node) return null;
-                const img = node.querySelector('img');
-                if (!img || !img.src) return null;
-                return {url: img.src};
-            });
-
-            // ✅ Gán vào biến ngoài, không dùng const
-            if (firstImageData) {
-                newLastUrl = this.normalizeImage(firstImageData.url);
-                log(crawlId, `🆕 New last image snapshot`, {url: newLastUrl});
-            }
-
+            // Scroll warmup
             for (let i = 1; i <= 3; i++) {
                 log(crawlId, `🔄 Scroll warmup`, {step: `${i}/3`});
                 await page.evaluate(() => {
@@ -109,13 +95,11 @@ export class TwitterCrawler {
                 if (stop) break;
 
                 const selector = `#verticalGridItem-${i}-profile-grid-0`;
-                log(crawlId, `🔍 Checking item`, {selector});
-
                 const imageData = await page.evaluate((selector) => {
                     const node = document.querySelector(selector);
                     if (!node) return null;
                     const img = node.querySelector('img');
-                    if (!img || !img.src) return null;
+                    if (!img?.src) return null;
                     return {url: img.src, width: img.naturalWidth, height: img.naturalHeight};
                 }, selector);
 
@@ -124,13 +108,20 @@ export class TwitterCrawler {
                     continue;
                 }
 
-                if (imageData.url.includes("video")) {
+                // Bỏ qua video
+                if (imageData.url.includes('amplify_video_thumb')) {
                     log(crawlId, `⏭️ Skip video media`);
                     continue;
                 }
 
                 const normalizedUrl = this.normalizeImage(imageData.url);
                 log(crawlId, `📸 Found image`, {url: normalizedUrl});
+
+                // ✅ Set newLastUrl từ ảnh thật đầu tiên tìm được
+                if (!newLastUrl) {
+                    newLastUrl = normalizedUrl;
+                    log(crawlId, `🆕 New last image set`, {url: newLastUrl});
+                }
 
                 if (normalizedLast && normalizedUrl === normalizedLast) {
                     log(crawlId, `🛑 Last image matched — STOP CRAWL`);
