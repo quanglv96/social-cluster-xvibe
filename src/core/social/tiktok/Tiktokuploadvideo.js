@@ -686,22 +686,21 @@ export class TiktokUploadVideo {
                 if (!tip) return {state: 'not_found'};
 
                 const text = tip.textContent?.trim() || '';
-                const computedColor = getComputedStyle(tip).color;
-                const inlineColor = tip.style.color || '';
+                const inlineColor = tip.style.color || ''; // "var(--ui-text-success)" hoặc "var(--ui-text-3)"
 
                 if (text.includes('Đang kiểm tra')) {
                     return {state: 'checking', text};
                 }
 
-                if (inlineColor.includes('ui-text-success') || text.includes('Không phát hiện vấn đề')) {
+                // Check text trước — đây là cách chắc chắn nhất
+                if (text.includes('Không phát hiện vấn đề')) {
                     return {state: 'success', text};
                 }
 
-                // Phát hiện màu đỏ / cảnh báo lỗi
+                // Check màu đỏ/lỗi qua CSS variable name
                 if (
                     inlineColor.includes('ui-text-danger') ||
                     inlineColor.includes('ui-text-error') ||
-                    inlineColor.includes('red') ||
                     text.includes('vi phạm') ||
                     text.includes('không được phép') ||
                     text.includes('bị từ chối')
