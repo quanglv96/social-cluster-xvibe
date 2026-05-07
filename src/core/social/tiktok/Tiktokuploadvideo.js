@@ -415,38 +415,34 @@ export class TiktokUploadVideo {
     // STEP 4: Điền caption vào DraftEditor
     // ------------------------------------------------
     async fillCaption(page, caption) {
-        log(TAG, `Filling caption...`, {length: caption.length});
-        // Tìm contenteditable của DraftEditor trong caption container
         const captionEditor = page.locator(
             '[data-e2e="caption_container"] .public-DraftEditor-content'
         );
         await captionEditor.waitFor({state: 'visible', timeout: 15000});
 
-        // Click vào editor để focus
         await captionEditor.click();
         await this.sleep(400);
 
-        // Xoá nội dung cũ (tên file mặc định)
         await page.keyboard.down('Control');
         await page.keyboard.press('A');
         await page.keyboard.up('Control');
         await page.keyboard.press('Backspace');
         await this.sleep(300);
+
         if (!caption) {
             log(TAG, `No caption provided — skipping`);
             return;
         }
-        // Gõ caption từng ký tự (human-like)
+
+        log(TAG, `Filling caption...`, {length: caption.length}); // ✅ sau check
         for (const char of caption) {
             await page.keyboard.type(char, {delay: 30 + Math.random() * 50});
         }
 
         await this.sleep(800);
 
-        // Verify
         const currentText = await captionEditor.innerText();
         log(TAG, `Caption filled`, {preview: currentText.slice(0, 60)});
-
         logOk(TAG, `Caption set successfully`);
     }
 
