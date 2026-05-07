@@ -84,7 +84,9 @@ export class TwitterCrawler {
                 });
                 await page.waitForTimeout(1500);
             }
-
+            // ✅ Scroll về top, chờ DOM remount item 0
+            await page.evaluate(() => window.scrollTo(0, 0));
+            await page.waitForTimeout(2000);
             const allItems = await page.$$('[id^="verticalGridItem-"]');
             log(crawlId, `🔍 Total DOM items found`, {count: allItems.length});
 
