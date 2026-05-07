@@ -76,6 +76,21 @@ export class TwitterCrawler {
         try {
             await page.waitForTimeout(3000);
 
+            // ✅ Snapshot ảnh mới nhất TRƯỚC KHI scroll
+            const firstImageData = await page.evaluate(() => {
+                const node = document.querySelector('#verticalGridItem-0-profile-grid-0');
+                if (!node) return null;
+                const img = node.querySelector('img');
+                if (!img || !img.src) return null;
+                return {url: img.src};
+            });
+
+            // ✅ Gán vào biến ngoài, không dùng const
+            if (firstImageData) {
+                newLastUrl = this.normalizeImage(firstImageData.url);
+                log(crawlId, `🆕 New last image snapshot`, {url: newLastUrl});
+            }
+
             for (let i = 1; i <= 3; i++) {
                 log(crawlId, `🔄 Scroll warmup`, {step: `${i}/3`});
                 await page.evaluate(() => {
@@ -125,13 +140,6 @@ export class TwitterCrawler {
 
                 images.push({url: normalizedUrl, width: imageData.width, height: imageData.height});
             }
-
-            const firstImage = images.length > 0 ? images[0].url : null;
-            if (firstImage && firstImage !== normalizedLast) {
-                log(crawlId, `🆕 New last image detected`, {url: firstImage});
-                newLastUrl = firstImage;
-            }
-
             logOk(crawlId, `Crawl finished`, {
                 total: images.length,
                 totalMs: Date.now() - startTime,
