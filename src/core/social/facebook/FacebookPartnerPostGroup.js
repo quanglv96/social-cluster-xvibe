@@ -203,6 +203,19 @@ export class FacebookPartnerPostGroup {
 
                     if (!clicked) throw new Error('Cannot find enabled Post button');
 
+                    // ✅ CHECK SPAM WARNING ngay sau khi click đăng
+                    const isSpamBlocked = await this.checkSpamWarning(page, TAG);
+                    if (isSpamBlocked) {
+                        await logCheckpoint(page, {
+                            step: 'spam_blocked',
+                            message: `Facebook spam warning triggered at group ${i + 1}/${groups.length} | ${groupUrl}`,
+                        });
+                        // Đóng dialog nếu còn
+                        await page.keyboard.press('Escape').catch(() => {});
+                        // ❌ Throw để dừng toàn bộ request, không post tiếp
+                        throw new Error('SPAM_BLOCKED: Facebook rate-limited this account. Stop all posting.');
+                    }
+
                     // ✅ FIX: Chờ dialog đóng hẳn trước khi sang group tiếp
                     await page.waitForSelector('div[role="dialog"]', {
                         state: 'detached',
@@ -256,6 +269,29 @@ export class FacebookPartnerPostGroup {
         }
     }
 
+    // Thêm method này vào class
+    async checkSpamWarning(page, TAG = 'FB_PARTNER_POST_GROUP') {
+        try {
+            // Chờ tối đa 3s để xem có dialog cảnh báo không
+            const warningEl = await page.waitForSelector(
+                'div:has-text("Để bảo vệ cộng đồng khỏi spam")',
+                { timeout: 3000 }
+            ).catch(() => null);
+
+            if (!warningEl) return false;
+
+            // Double-check text content để tránh false positive
+            const text = await warningEl.innerText().catch(() => '');
+            if (text.includes('Để bảo vệ cộng đồng khỏi spam')) {
+                logError(TAG, `Spam warning detected! Facebook has rate-limited this account.`);
+                return true;
+            }
+
+            return false;
+        } catch {
+            return false;
+        }
+    }
     async switchToProfile(page, TAG = 'FB_PARTNER_POST_GROUP') {
         await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
         log(TAG, `Switching back to PROFILE`);
