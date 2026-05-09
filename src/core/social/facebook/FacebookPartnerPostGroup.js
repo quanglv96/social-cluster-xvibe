@@ -91,7 +91,7 @@ export class FacebookPartnerPostGroup {
             await this.switchToPage(page, pageAdminUrl, TAG);
 
             const groups = groupUrls.slice(0, 10);
-
+            let spamBlocked = false; // ← flag
             for (let i = 0; i < groups.length; i++) {
                 const groupUrl = groups[i];
 
@@ -212,8 +212,8 @@ export class FacebookPartnerPostGroup {
                         });
                         // Đóng dialog nếu còn
                         await page.keyboard.press('Escape').catch(() => {});
-                        // ❌ Throw để dừng toàn bộ request, không post tiếp
-                        throw new Error('SPAM_BLOCKED: Facebook rate-limited this account. Stop all posting.');
+                        spamBlocked = true; // ← set flag, KHÔNG throw ở đây
+                        break;              // ← break khỏi for loop ngay lập tức
                     }
 
                     // ✅ FIX: Chờ dialog đóng hẳn trước khi sang group tiếp
@@ -228,18 +228,14 @@ export class FacebookPartnerPostGroup {
                         message: `Post partner done - group ${i + 1}/${groups.length} | ${groupUrl}`,
                     });
                     logOk(TAG, `Post success`, {groupUrl});
-
                 } catch (err) {
                     logError(TAG, `Post failed for group`, err);
-                    // ✅ CHECKPOINT 3: Chụp lại màn hình khi fail để debug
                     await logCheckpoint(page, {
                         step: 'post_failed',
                         message: `Post partner failed - group ${i + 1}/${groups.length} | ${groupUrl} | error: ${err?.message}`,
                     });
-                    // ✅ FIX: Escape để đóng dialog trước khi goto group tiếp
                     await page.keyboard.press('Escape').catch(() => {});
                     await this.delay.action('after escape', page);
-
                     logWarn(TAG, `Skipping group`, {groupUrl});
                 }
 
@@ -247,7 +243,10 @@ export class FacebookPartnerPostGroup {
                     await this.delay.betweenGroup('cooldown between groups');
                 }
             }
-
+            // ← Sau vòng lặp, xử lý theo flag
+            if (spamBlocked) {
+                throw new Error('SPAM_BLOCKED: Facebook rate-limited this account. Stop all posting.');
+            }
             logOk(TAG, `Post process completed`);
 
             await this.switchToProfile(page, TAG);
