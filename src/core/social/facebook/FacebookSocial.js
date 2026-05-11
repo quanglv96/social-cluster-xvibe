@@ -5,6 +5,7 @@ import {FacebookPostStory} from "./FacebookPostStory.js";
 import {FacebookPostProfile} from "./FacebookPostProfile.js";
 import {FacebookPartnerPostGroup} from "./FacebookPartnerPostGroup.js";
 import {FacebookUploadReels} from "./FacebookUploadReels.js";
+import {FacebookAcceptPage} from "./FacebookAcceptPage.js";
 
 export class FacebookSocial extends BaseSocial {
 
@@ -17,6 +18,7 @@ export class FacebookSocial extends BaseSocial {
         this.postProfile = new FacebookPostProfile(context);
         this.postStory = new FacebookPostStory(context);
         this.postReel = new FacebookUploadReels(context);
+        this.acceptPage = new FacebookAcceptPage(context);
     }
 
     async fbCrawler(dto, page) {
@@ -41,5 +43,9 @@ export class FacebookSocial extends BaseSocial {
 
     async uploadReelAction(dto, page) {
         return await this.postReel.upload(dto, page);
+    }
+
+    async acceptPageAction(dto, page) {
+        return await this.acceptPage.accept(dto, page);
     }
 }

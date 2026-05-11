@@ -133,6 +133,7 @@ export class FacebookAuth extends BaseAuth {
             const newCookies = await context.cookies();
             await axios.post(`${runtimeConfig.api.apiUpdateCookie}`, {
                 type,
+                user_name,
                 cookie: JSON.stringify(newCookies)
             });
 

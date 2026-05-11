@@ -16,6 +16,7 @@ export class SocialFactory {
             case 'CRAWLS_FB':
             case 'PARTNER_POST_GROUP':
             case 'FB_UPLOAD_REEL':
+            case 'ACCEPT_PAGE':
                 return new FacebookSocial(context);
 
             case 'POST_TWITTER':

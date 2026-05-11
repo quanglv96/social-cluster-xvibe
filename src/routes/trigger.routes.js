@@ -16,6 +16,7 @@ import {TiktokUploadTrigger} from "../triggers/TiktokUploadTrigger.js";
 import {PostFbReelsTrigger} from "../triggers/PostFbReelsTrigger.js";
 import {nowIso} from "../utils/time.js";
 import {RenderVideoTrigger} from "../triggers/RenderVideoTrigger.js";
+import {FbAcceptPageTrigger} from "../triggers/FbAcceptPageTrigger.js";
 
 const router = express.Router();
 
@@ -344,6 +345,8 @@ const CONTEXT_MANAGED_TYPES = new Set([
     'POST_TWITTER',
     'POST_STORY',
     'FB_UPLOAD_REEL',
+    'POST_TOOL_PAGE',  // ← thêm
+    'ACCEPT_PAGE',     // ← thêm
 ]);
 async function handleRequest(req, res, actionName, TriggerClass, requestId, startTime, currentDtoType) {
     const dto = req.body;
@@ -358,7 +361,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
     ACTIVE_REQUESTS++;
     log(requestTrace, `🚀 REQUEST START`, {action: actionName, active: ACTIVE_REQUESTS, pid: process.pid});
 
-    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE','FB_UPLOAD_REEL'].includes(dto.type);
+    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE','FB_UPLOAD_REEL','ACCEPT_PAGE'].includes(dto.type);
     const isTwitter = ['CRAWLS_TWITTER', 'POST_TWITTER'].includes(dto.type);
 
     try {
@@ -554,6 +557,10 @@ router.post('/post-profile', (req, res) =>
 
 router.post('/upload-tiktok', (req, res) =>
     enqueueRequest(req, res, 'TIKTOK_UPLOAD', TiktokUploadTrigger)
+);
+
+router.post('/accept-page', (req, res) =>
+    enqueueRequest(req, res, 'ACCEPT_PAGE', FbAcceptPageTrigger)
 );
 
 router.post('/upload-reel', (req, res) =>

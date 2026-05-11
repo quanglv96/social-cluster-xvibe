@@ -10,7 +10,7 @@ import {CapCutSocial} from "../social/capcut/CapCutSocial.js";
 export class ContextFactory {
 
     static async create(dto) {
-        const FB_TYPES = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE', 'FB_UPLOAD_REEL'];
+        const FB_TYPES = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE', 'FB_UPLOAD_REEL','ACCEPT_PAGE'];
         const TW_TYPES = ['CRAWLS_TWITTER', 'POST_TWITTER'];
         const TK_TYPES = ['TIKTOK_UPLOAD'];
         const CC_TYPES = ['RENDER_VIDEO'];
