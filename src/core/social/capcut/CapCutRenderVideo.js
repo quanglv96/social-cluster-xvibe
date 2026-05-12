@@ -183,12 +183,41 @@ export class CapCutRenderVideo {
         await page.waitForSelector('.waterfall__item[data-id]', {timeout: 10000});
         await page.waitForTimeout(1500); // đợi DOM ổn định sau khi render waterfall
 
-        const domIds = await page.$$eval(
+        const allTemplates = await page.$$eval(
             '.waterfall__item[data-id]',
-            (els) => els.map(el => el.getAttribute('data-id')).filter(Boolean)
-        );
+            (els) => els.map(el => {
+                const id = el.getAttribute('data-id');
+                if (!id) return null;
 
-        log(renderId, `📡 B4: DOM template ids found`, {count: domIds.length});
+                // Parse usage count từ .preview-template-desc-usage
+                // Giá trị có thể là "9.9K", "1.2M", "500", v.v.
+                const usageEl = el.querySelector('.preview-template-desc-usage');
+                let usage = 0;
+                if (usageEl) {
+                    const raw = usageEl.textContent.trim().replace(/[^0-9.KkMm]/g, '');
+                    if (raw.toUpperCase().endsWith('M')) {
+                        usage = parseFloat(raw) * 1_000_000;
+                    } else if (raw.toUpperCase().endsWith('K')) {
+                        usage = parseFloat(raw) * 1_000;
+                    } else {
+                        usage = parseFloat(raw) || 0;
+                    }
+                }
+
+                return {id, usage};
+            }).filter(Boolean)
+        );
+        // Sắp xếp giảm dần theo usage, lấy top 10
+        const numSelect = 5
+        const top = allTemplates
+            .sort((a, b) => b.usage - a.usage)
+            .slice(0, numSelect);
+
+        const domIds = top.map(t => t.id);
+
+        log(renderId, `📡 B4: top-${numSelect} templates by usage`, {
+            templates: top.map(t => `${t.id}(${t.usage})`).join(', ')
+        });
         if (!domIds.length) throw new Error('No template cards found in DOM');
 
         let editorPage;
