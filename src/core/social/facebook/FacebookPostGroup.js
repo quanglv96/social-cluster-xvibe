@@ -139,10 +139,12 @@ export class FacebookPostGroup {
                     log(TAG, `Post box clicked`);
                     await this.delay.action('after click post box', page);
 
-                    const textbox = await page.waitForSelector(
-                        'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-                        { timeout: 10000 }
-                    );
+                    const textboxSelector =
+                        'div[role="dialog"] div[role="textbox"][contenteditable="true"][data-lexical-editor="true"]';
+
+                    const textbox = await page.waitForSelector(textboxSelector, {
+                        timeout: 10000
+                    });
 
                     if (!textbox) throw new Error('Cannot find textbox');
 
