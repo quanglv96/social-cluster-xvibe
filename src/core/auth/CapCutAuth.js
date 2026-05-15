@@ -229,6 +229,7 @@ export class CapCutAuth extends BaseAuth {
             log(TAG, 'Navigating to /my-edit...');
             await this.safeGoto(page, 'https://www.capcut.com/my-edit');
             await page.waitForLoadState('domcontentloaded');
+            await page.waitForLoadState('networkidle');
             await page.waitForTimeout(3000);
 
             const currentUrl = page.url();
@@ -242,7 +243,10 @@ export class CapCutAuth extends BaseAuth {
 
             const avatar = page.locator('img[alt="avatar"]');
             try {
-                await avatar.waitFor({ timeout: 10000 });
+                await avatar.waitFor({
+                    state: 'visible',
+                    timeout: 30000
+                });
                 logOk(TAG, 'Cookie login success (avatar detected)');
                 return true;
             } catch {
