@@ -415,7 +415,9 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             success: true,
             request_id: requestId,
             scheduler_id: dto.scheduler_id,
-            value: result?.images?.length ?? 0
+            value: result?.images?.length ?? 0,
+            index: result?.index ?? null,
+            request_type: result?.request_type ?? null,
         });
 
     } catch (err) {

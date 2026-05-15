@@ -88,7 +88,7 @@ export class CapCutRenderVideo {
 
                 logOk(renderId, `Video sent to render API`, {filePath});
                 log(renderId, separator);
-                return {success: true, filePath};
+                return {success: true, index: index, request_type: requestType};
 
             } catch (err) {
                 logError(renderId, `Render failed on attempt ${retryCount + 1}`, err);
