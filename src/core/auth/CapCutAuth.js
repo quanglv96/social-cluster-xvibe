@@ -229,7 +229,6 @@ export class CapCutAuth extends BaseAuth {
             log(TAG, 'Navigating to /my-edit...');
             await this.safeGoto(page, 'https://www.capcut.com/my-edit');
             await page.waitForLoadState('domcontentloaded');
-            await page.waitForLoadState('networkidle');
             await page.waitForTimeout(3000);
 
             const currentUrl = page.url();
@@ -241,14 +240,21 @@ export class CapCutAuth extends BaseAuth {
                 return false;
             }
 
-            const avatar = page.locator('img[alt="avatar"]');
             try {
-                await avatar.waitFor({
-                    state: 'visible',
-                    timeout: 30000
-                });
+                await page.waitForLoadState('networkidle').catch(() => {});
+
+                await page.waitForFunction(() => {
+                    const avatar = document.querySelector('.user-avatar');
+                    const loginInput = document.querySelector('input[type="password"]');
+
+                    return avatar &&
+                        avatar.offsetParent !== null &&
+                        !loginInput;
+                }, { timeout: 30000 });
+
                 logOk(TAG, 'Cookie login success (avatar detected)');
                 return true;
+
             } catch {
                 logWarn(TAG, 'Avatar not found — checking other indicators...');
             }
