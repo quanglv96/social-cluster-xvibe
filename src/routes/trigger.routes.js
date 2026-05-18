@@ -144,7 +144,7 @@ function _resetIdleTimer() {
     _idleTimer = setTimeout(async () => {
         sendToRenderer('warn', `[${nowIso()}] [IDLE_TIMER] ⏰ No request for 4min — re-tunneling`);
         try {
-            await resetTunnelServer();
+            // await resetTunnelServer();
             sendToRenderer('ok', `[${nowIso()}] [IDLE_TIMER] ✅ re-tunnel success`);
         } catch (err) {
             sendToRenderer('error', `[${nowIso()}] [IDLE_TIMER] ❌ re-tunnel failed | error=${err.message}`);

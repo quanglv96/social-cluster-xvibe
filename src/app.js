@@ -215,10 +215,10 @@ async function bootstrap() {
             });
         });
 
-        const publicUrl = await TunnelService.start(PORT);
-        log('TUNNEL', `started`, { url: publicUrl });
-
-        await registerWithRetry(publicUrl);
+        // const publicUrl = await TunnelService.start(PORT);
+        // log('TUNNEL', `started`, { url: publicUrl });
+        //
+        // await registerWithRetry(publicUrl);
 
         isHealthy = true;
         logOk('APP', '🎉 bootstrap complete');
