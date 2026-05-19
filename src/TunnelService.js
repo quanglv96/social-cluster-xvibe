@@ -3,7 +3,9 @@ import path from 'path';
 import { nowIso } from "./utils/time.js";
 import { ensureCloudflared } from "./ensureCloudflared.js";
 import fs from "fs";
+import electron from 'electron';
 
+const { app } = electron;
 const TAG = 'TUNNEL';
 
 function formatMsg(requestId, message, fields = {}) {
@@ -200,17 +202,14 @@ export class TunnelService {
 
     static ensureResources(basePath) {
 
-        const isDev = !process.mainModule.filename.includes('app.asar');
+        const isDev = !app.isPackaged;
 
         const srcBase = isDev
             ? path.join(process.cwd(), 'src', 'resources')
             : process.resourcesPath;
 
-        const destBase = basePath;
-
-        // =========================
-        // CONFIG
-        // =========================
+        console.log('isDev=', isDev);
+        console.log('srcBase=', srcBase);
 
         const configSrc = path.join(
             srcBase,
@@ -218,8 +217,10 @@ export class TunnelService {
             'config.yml'
         );
 
+        console.log('configSrc=', configSrc);
+
         const configDest = path.join(
-            destBase,
+            basePath,
             'cloudflare',
             'config.yml'
         );
@@ -232,32 +233,6 @@ export class TunnelService {
             );
 
             fs.copyFileSync(configSrc, configDest);
-        }
-
-        // =========================
-        // TUNNEL JSON
-        // =========================
-
-        const tunnelSrc = path.join(
-            srcBase,
-            'cloudflare',
-            'tunnel.json'
-        );
-
-        const tunnelDest = path.join(
-            destBase,
-            'cloudflare',
-            'tunnel.json'
-        );
-
-        if (!fs.existsSync(tunnelDest)) {
-
-            fs.mkdirSync(
-                path.dirname(tunnelDest),
-                { recursive: true }
-            );
-
-            fs.copyFileSync(tunnelSrc, tunnelDest);
         }
     }
 }
