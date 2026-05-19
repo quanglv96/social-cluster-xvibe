@@ -9,6 +9,7 @@ import {runtimeConfig} from "./config/config.js";
 import {setupAutoUpdater} from "./updater.js";
 import pkg from 'electron-updater';
 import {nowIso} from "./utils/time.js";
+import {TunnelService} from "./TunnelService.js";
 
 const {autoUpdater} = pkg;
 
@@ -130,7 +131,16 @@ function startServer() {
     );
 
     log('SERVER', '🚀 started', {pid: serverProcess.pid});
-
+    log('BOOT', 'after tunnel start');
+    setTimeout(() => {
+        TunnelService.start(userDataPath)
+            .then(url => {
+                log('TUNNEL', 'started', { url });
+            })
+            .catch(err => {
+                logError('TUNNEL', 'failed to start', { error: err.message });
+            });
+    }, 1500);
     serverProcess.on('message', (msg) => {
         console.log('[MAIN IPC]', msg?.type, JSON.stringify(msg?.data)?.slice(0, 100)); // ← thêm
 

@@ -215,8 +215,8 @@ async function bootstrap() {
             });
         });
 
-        const publicUrl = await TunnelService.start(PORT);
-        log('TUNNEL', `started`, { url: publicUrl });
+        // const publicUrl = await TunnelService.start(PORT);
+        // log('TUNNEL', `started`, { url: publicUrl });
         //
         // await registerWithRetry(publicUrl);
 
@@ -231,9 +231,9 @@ async function bootstrap() {
 
 // app.js
 export async function resetTunnelServer() { // ← thêm async, sửa typo Server
-    const publicUrl = await TunnelService.start(PORT);
-    log('TUNNEL', `started`, { url: publicUrl });
-    await registerWithRetry(publicUrl);
+    // const publicUrl = await TunnelService.start(PORT);
+    // log('TUNNEL', `started`, { url: publicUrl });
+    // await registerWithRetry(publicUrl);
 }
 
 // =========================

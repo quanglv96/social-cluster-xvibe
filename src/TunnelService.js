@@ -1,8 +1,8 @@
 import { spawn } from 'child_process';
 import path from 'path';
-import { app } from 'electron';
 import { nowIso } from "./utils/time.js";
 import { ensureCloudflared } from "./ensureCloudflared.js";
+import fs from "fs";
 
 const TAG = 'TUNNEL';
 
@@ -39,32 +39,44 @@ function logOk(id, msg, f = {}) {
 export class TunnelService {
 
     static process = null;
-    static url = null;
+    static url = 'https://tunnel-social.xvibe.me';
 
-    static async start() {
-
+    static async start(basePath) {
+        this.ensureResources(basePath);
+        console.log('🔥 ENTER TunnelService.start', basePath);
+        log('TUNNEL', 'ENTER start', { basePath });
         const requestId = `${TAG}_${Date.now()}`;
 
         if (this.process) {
+            log(requestId, 'Reuse existing tunnel', {
+                url: this.url
+            });
             return this.url;
         }
 
         try {
 
-            await app.whenReady();
-
-            const basePath = app.getPath('userData');
-
+            // =========================
+            // PATHS
+            // =========================
             const cloudflareExe = path.join(basePath, 'bin', 'cloudflared.exe');
-
             const configPath = path.join(basePath, 'cloudflare', 'config.yml');
+            if (!fs.existsSync(cloudflareExe)) {
+                throw new Error(`cloudflared not found: ${cloudflareExe}`);
+            }
 
+            if (!fs.existsSync(configPath)) {
+                throw new Error(`config not found: ${configPath}`);
+            }
             await ensureCloudflared(cloudflareExe);
 
             log(requestId, 'Starting Cloudflare Tunnel', {
                 config: configPath
             });
 
+            // =========================
+            // SPAWN PROCESS
+            // =========================
             const proc = spawn(
                 cloudflareExe,
                 [
@@ -81,6 +93,12 @@ export class TunnelService {
 
             this.process = proc;
 
+            log(requestId, 'Tunnel process spawned', {
+                pid: proc.pid
+            });
+
+            log(requestId, 'Tunnel initializing...');
+
             let connected = false;
 
             const handleOutput = (data) => {
@@ -94,19 +112,29 @@ export class TunnelService {
 
                         log(requestId, '[cloudflared]', { msg: v });
 
-                        // parse real URL
+                        // =========================
+                        // extract tunnel url
+                        // =========================
                         const match = v.match(/https:\/\/[a-zA-Z0-9.-]+/);
 
                         if (match && !this.url) {
                             this.url = match[0];
+
+                            logOk(requestId, 'Tunnel URL detected', {
+                                url: this.url
+                            });
                         }
 
+                        // =========================
+                        // connection ready
+                        // =========================
                         if (v.includes('Registered tunnel connection') && !connected) {
 
                             connected = true;
 
-                            logOk(requestId, 'Tunnel ready', {
-                                url: this.url
+                            logOk(requestId, 'Tunnel fully connected', {
+                                url: this.url,
+                                status: 'READY'
                             });
                         }
 
@@ -118,8 +146,11 @@ export class TunnelService {
             proc.stderr.on('data', handleOutput);
 
             proc.on('error', (err) => {
+
                 logError(requestId, 'Tunnel process error', err);
+
                 this.process = null;
+                this.url = null;
             });
 
             proc.on('close', (code) => {
@@ -129,10 +160,17 @@ export class TunnelService {
                 this.process = null;
                 this.url = null;
 
+                // =========================
+                // SAFE RECONNECT (no duplicate)
+                // =========================
                 setTimeout(() => {
-                    TunnelService.start().catch(err => {
-                        logError(requestId, 'Reconnect failed', err);
-                    });
+
+                    if (!this.process) {
+                        TunnelService.start(basePath).catch(err => {
+                            logError(requestId, 'Reconnect failed', err);
+                        });
+                    }
+
                 }, 5000);
 
             });
@@ -140,6 +178,7 @@ export class TunnelService {
             return this.url;
 
         } catch (err) {
+
             logError(requestId, 'Tunnel start failed', err);
             throw err;
         }
@@ -150,11 +189,34 @@ export class TunnelService {
         const requestId = `${TAG}_${Date.now()}`;
 
         if (this.process) {
+
             this.process.kill();
             this.process = null;
             this.url = null;
 
             logWarn(requestId, 'Tunnel stopped manually');
+        }
+    }
+
+    static ensureResources(basePath) {
+
+        const src = path.join(process.cwd(), 'src', 'resources');
+
+        const configSrc = path.join(src, 'cloudflare', 'config.yml');
+        const configDest = path.join(basePath, 'cloudflare', 'config.yml');
+
+        const exeSrc = path.join(src, 'bin', 'cloudflared.exe');
+        const exeDest = path.join(basePath, 'bin', 'cloudflared.exe');
+
+        fs.mkdirSync(path.dirname(configDest), { recursive: true });
+        fs.mkdirSync(path.dirname(exeDest), { recursive: true });
+
+        if (!fs.existsSync(configDest)) {
+            fs.copyFileSync(configSrc, configDest);
+        }
+
+        if (!fs.existsSync(exeDest)) {
+            fs.copyFileSync(exeSrc, exeDest);
         }
     }
 }
