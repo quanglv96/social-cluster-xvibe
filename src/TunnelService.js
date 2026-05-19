@@ -1,5 +1,7 @@
-import localtunnel from 'localtunnel';
+import { spawn } from 'child_process';
+import path from 'path';
 import { nowIso } from "./utils/time.js";
+import { ensureCloudflared } from "./ensureCloudflared.js";
 
 const TAG = 'TUNNEL';
 
@@ -24,7 +26,8 @@ function logWarn(id, msg, f = {}) {
 }
 
 function logError(id, msg, err) {
-    sendToRenderer('error',
+    sendToRenderer(
+        'error',
         formatMsg(id, `❌ ${msg}`, {
             error: err?.message || err
         })
@@ -37,14 +40,15 @@ function logOk(id, msg, f = {}) {
 
 export class TunnelService {
 
-    static tunnel = null;
-    static url = null;
+    static process = null;
+    static url = 'https://tunnel-social.xvibe.me';
 
-    static async start(port) {
+    static async start() {
 
         const requestId = `${TAG}_${Date.now()}`;
 
-        if (this.url) {
+        if (this.process) {
+
             log(requestId, 'Reuse tunnel', {
                 url: this.url
             });
@@ -54,38 +58,108 @@ export class TunnelService {
 
         try {
 
-            log(requestId, 'Starting LocalTunnel', {
-                port
+            // =========================
+            // PATHS
+            // =========================
+
+            const basePath = path.join(process.cwd(), 'src', 'resources');
+
+            const cloudflareExe = path.join(
+                basePath,
+                'bin',
+                'cloudflared.exe'
+            );
+
+            const configPath = path.join(
+                basePath,
+                'cloudflare',
+                'config.yml'
+            );
+
+            // ensure binary exists
+            await ensureCloudflared(cloudflareExe);
+
+            log(requestId, 'Starting Cloudflare Tunnel', {
+                config: configPath
             });
 
-            const tunnel = await localtunnel({
-                port
+            // =========================
+            // SPAWN
+            // =========================
+
+            const proc = spawn(
+                cloudflareExe,
+                [
+                    'tunnel',
+                    '--config',
+                    configPath,
+                    'run'
+                ],
+                {
+                    windowsHide: true,
+                    stdio: ['ignore', 'pipe', 'pipe']
+                }
+            );
+
+            this.process = proc;
+
+            let connected = false;
+
+            const handleOutput = (data) => {
+
+                const text = data.toString();
+
+                text.split('\n')
+                    .map(v => v.trim())
+                    .filter(Boolean)
+                    .forEach(v => {
+
+                        log(requestId, '[cloudflared]', { msg: v });
+
+                        if (
+                            v.includes('Registered tunnel connection')
+                            && !connected
+                        ) {
+                            connected = true;
+
+                            logOk(requestId, 'Tunnel ready', {
+                                url: this.url
+                            });
+                        }
+
+                    });
+
+            };
+
+            proc.stdout.on('data', handleOutput);
+            proc.stderr.on('data', handleOutput);
+
+            proc.on('error', (err) => {
+
+                logError(requestId, 'Tunnel process error', err);
+                this.process = null;
+
             });
 
-            this.tunnel = tunnel;
-            this.url = tunnel.url;
+            proc.on('close', (code) => {
 
-            logOk(requestId, 'Tunnel ready', {
-                url: tunnel.url
-            });
+                logWarn(requestId, 'Tunnel closed', { code });
 
-            tunnel.on('close', async () => {
-
-                logWarn(requestId, 'Tunnel closed');
-
-                this.url = null;
-                this.tunnel = null;
+                this.process = null;
 
                 setTimeout(() => {
-                    TunnelService.start(port)
-                        .catch(err => {
-                            logError(requestId, 'Reconnect failed', err);
-                        });
-                }, 3000);
+
+                    TunnelService.start().catch(err => {
+
+                        logError(requestId, 'Reconnect failed', err);
+
+                    });
+
+                }, 5000);
 
             });
 
-            return tunnel.url;
+            return this.url;
 
         } catch (err) {
 
@@ -99,12 +173,10 @@ export class TunnelService {
 
         const requestId = `${TAG}_${Date.now()}`;
 
-        if (this.tunnel) {
+        if (this.process) {
 
-            await this.tunnel.close();
-
-            this.tunnel = null;
-            this.url = null;
+            this.process.kill();
+            this.process = null;
 
             logWarn(requestId, 'Tunnel stopped manually');
         }
