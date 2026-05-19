@@ -200,23 +200,64 @@ export class TunnelService {
 
     static ensureResources(basePath) {
 
-        const src = path.join(process.cwd(), 'src', 'resources');
+        const isDev = !process.mainModule.filename.includes('app.asar');
 
-        const configSrc = path.join(src, 'cloudflare', 'config.yml');
-        const configDest = path.join(basePath, 'cloudflare', 'config.yml');
+        const srcBase = isDev
+            ? path.join(process.cwd(), 'src', 'resources')
+            : process.resourcesPath;
 
-        const exeSrc = path.join(src, 'bin', 'cloudflared.exe');
-        const exeDest = path.join(basePath, 'bin', 'cloudflared.exe');
+        const destBase = basePath;
 
-        fs.mkdirSync(path.dirname(configDest), { recursive: true });
-        fs.mkdirSync(path.dirname(exeDest), { recursive: true });
+        // =========================
+        // CONFIG
+        // =========================
+
+        const configSrc = path.join(
+            srcBase,
+            'cloudflare',
+            'config.yml'
+        );
+
+        const configDest = path.join(
+            destBase,
+            'cloudflare',
+            'config.yml'
+        );
 
         if (!fs.existsSync(configDest)) {
+
+            fs.mkdirSync(
+                path.dirname(configDest),
+                { recursive: true }
+            );
+
             fs.copyFileSync(configSrc, configDest);
         }
 
-        if (!fs.existsSync(exeDest)) {
-            fs.copyFileSync(exeSrc, exeDest);
+        // =========================
+        // TUNNEL JSON
+        // =========================
+
+        const tunnelSrc = path.join(
+            srcBase,
+            'cloudflare',
+            'tunnel.json'
+        );
+
+        const tunnelDest = path.join(
+            destBase,
+            'cloudflare',
+            'tunnel.json'
+        );
+
+        if (!fs.existsSync(tunnelDest)) {
+
+            fs.mkdirSync(
+                path.dirname(tunnelDest),
+                { recursive: true }
+            );
+
+            fs.copyFileSync(tunnelSrc, tunnelDest);
         }
     }
 }

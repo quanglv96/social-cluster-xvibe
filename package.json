@@ -22,6 +22,12 @@
       "!src/config/config.runtime.json",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "src/resources/cloudflare",
+        "to": "cloudflare"
+      }
+    ],
     "extraMetadata": {
       "config": {
         "rootUrl": "https://xvibe.me",
