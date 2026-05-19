@@ -79,12 +79,19 @@ export class TunnelService {
             // =========================
             // SPAWN PROCESS
             // =========================
+            const tunnelJsonPath = path.join(
+                basePath,
+                'cloudflare',
+                'tunnel.json'
+            );
             const proc = spawn(
                 cloudflareExe,
                 [
                     'tunnel',
                     '--config',
                     configPath,
+                    '--cred-file',
+                    tunnelJsonPath,
                     'run'
                 ],
                 {
