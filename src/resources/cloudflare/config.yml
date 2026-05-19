@@ -1,5 +1,5 @@
 tunnel: d20810c9-6a49-40b5-a6e8-36707da77fe8
-
+credentials-file: tunnel.json
 ingress:
   - hostname: tunnel-social.xvibe.me
     service: http://localhost:3002

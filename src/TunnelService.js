@@ -44,49 +44,57 @@ export class TunnelService {
     static url = 'https://tunnel-social.xvibe.me';
 
     static async start(basePath) {
-        this.ensureResources(basePath);
-        console.log('🔥 ENTER TunnelService.start', basePath);
-        log('TUNNEL', 'ENTER start', { basePath });
-        const requestId = `${TAG}_${Date.now()}`;
 
-        if (this.process) {
-            log(requestId, 'Reuse existing tunnel', {
-                url: this.url
-            });
-            return this.url;
-        }
+        const requestId = `${TAG}_${Date.now()}`;
 
         try {
 
-            // =========================
-            // PATHS
-            // =========================
-            const cloudflareExe = path.join(basePath, 'bin', 'cloudflared.exe');
-            const configPath = path.join(basePath, 'cloudflare', 'config.yml');
-            if (!fs.existsSync(cloudflareExe)) {
-                throw new Error(`cloudflared not found: ${cloudflareExe}`);
-            }
-
-            if (!fs.existsSync(configPath)) {
-                throw new Error(`config not found: ${configPath}`);
-            }
-            await ensureCloudflared(cloudflareExe);
-
-            log(requestId, 'Starting Cloudflare Tunnel', {
-                config: configPath
+            log(requestId, 'ENTER start', {
+                basePath,
+                resourcesPath: process.resourcesPath,
+                isPackaged: app.isPackaged
             });
 
-            // =========================
-            // SPAWN PROCESS
-            // =========================
+            const resourceBase = app.isPackaged
+                ? process.resourcesPath
+                : path.join(process.cwd(), 'src', 'resources');
+
+            const cloudflareExe = path.join(
+                resourceBase,
+                'bin',
+                'cloudflared.exe'
+            );
+
+            const configPath = path.join(
+                resourceBase,
+                'cloudflare',
+                'config.yml'
+            );
+
             const tunnelJsonPath = path.join(
-                basePath,
+                resourceBase,
                 'cloudflare',
                 'tunnel.json'
             );
-            console.log('cloudflareExe=', cloudflareExe);
-            console.log('configPath=', configPath);
-            console.log('tunnelJsonPath=', tunnelJsonPath)
+
+            log(requestId, 'Resolved paths', {
+                exe: cloudflareExe,
+                config: configPath,
+                tunnel: tunnelJsonPath
+            });
+
+            if (!fs.existsSync(cloudflareExe)) {
+                throw new Error(`cloudflared.exe missing`);
+            }
+
+            if (!fs.existsSync(configPath)) {
+                throw new Error(`config.yml missing`);
+            }
+
+            if (!fs.existsSync(tunnelJsonPath)) {
+                throw new Error(`tunnel.json missing`);
+            }
+
             const proc = spawn(
                 cloudflareExe,
                 [
@@ -95,8 +103,7 @@ export class TunnelService {
                     configPath,
                     '--cred-file',
                     tunnelJsonPath,
-                    'run',
-                    'd20810c9-6a49-40b5-a6e8-36707da77fe8'
+                    'run'
                 ],
                 {
                     windowsHide: true,
@@ -106,110 +113,38 @@ export class TunnelService {
 
             this.process = proc;
 
-            log(requestId, 'Tunnel process spawned', {
+            log(requestId, 'Tunnel spawned', {
                 pid: proc.pid
             });
 
-            log(requestId, 'Tunnel initializing...');
-
-            let connected = false;
-
-            const handleOutput = (data) => {
-
-                const text = data.toString();
-
-                text.split('\n')
-                    .map(v => v.trim())
-                    .filter(Boolean)
-                    .forEach(v => {
-
-                        log(requestId, '[cloudflared]', { msg: v });
-
-                        // =========================
-                        // extract tunnel url
-                        // =========================
-                        const match = v.match(/https:\/\/[a-zA-Z0-9.-]+/);
-
-                        if (match && !this.url) {
-                            this.url = match[0];
-
-                            logOk(requestId, 'Tunnel URL detected', {
-                                url: this.url
-                            });
-                        }
-
-                        // =========================
-                        // connection ready
-                        // =========================
-                        if (v.includes('Registered tunnel connection') && !connected) {
-
-                            connected = true;
-
-                            logOk(requestId, 'Tunnel fully connected', {
-                                url: this.url,
-                                status: 'READY'
-                            });
-                        }
-
-                    });
-
-            };
-
-            proc.stdout.on('data', (data) => {
-
-                const text = data.toString();
-
-                console.log('[CF STDOUT]', text);
-
-                handleOutput(data);
-
+            proc.stdout.on('data', (d) => {
+                log(requestId, '[stdout]', {
+                    msg: d.toString()
+                });
             });
 
-            proc.stderr.on('data', (data) => {
-
-                const text = data.toString();
-
-                console.error('[CF STDERR]', text);
-
-                handleOutput(data);
-
+            proc.stderr.on('data', (d) => {
+                log(requestId, '[stderr]', {
+                    msg: d.toString()
+                });
             });
 
             proc.on('error', (err) => {
-
-                logError(requestId, 'Tunnel process error', err);
-
-                this.process = null;
-                this.url = null;
+                logError(requestId, 'spawn error', err);
             });
 
             proc.on('close', (code) => {
-
-                logWarn(requestId, 'Tunnel closed', { code });
+                logWarn(requestId, 'process closed', {
+                    code
+                });
 
                 this.process = null;
-                this.url = null;
-
-                // =========================
-                // SAFE RECONNECT (no duplicate)
-                // =========================
-                setTimeout(() => {
-
-                    if (!this.process) {
-                        TunnelService.start(basePath).catch(err => {
-                            logError(requestId, 'Reconnect failed', err);
-                        });
-                    }
-
-                }, 5000);
-
             });
-
-            return this.url;
 
         } catch (err) {
 
-            logError(requestId, 'Tunnel start failed', err);
+            logError(requestId, 'failed to start', err);
+
             throw err;
         }
     }

@@ -26,6 +26,10 @@
       {
         "from": "src/resources/cloudflare",
         "to": "cloudflare"
+      },
+      {
+        "from": "src/resources/bin",
+        "to": "bin"
       }
     ],
     "extraMetadata": {

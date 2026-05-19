@@ -132,15 +132,28 @@ function startServer() {
 
     log('SERVER', '🚀 started', {pid: serverProcess.pid});
     log('BOOT', 'after tunnel start');
-    setTimeout(() => {
-        TunnelService.start(userDataPath)
-            .then(url => {
-                log('TUNNEL', 'started', { url });
-            })
-            .catch(err => {
-                logError('TUNNEL', 'failed to start', { error: err.message });
+    (async () => {
+        try {
+
+            log('BOOT', 'starting tunnel...', {
+                userDataPath
             });
-    }, 1500);
+
+            const tunnelUrl = await TunnelService.start(userDataPath);
+
+            log('BOOT', 'tunnel started', {
+                tunnelUrl
+            });
+
+        } catch (err) {
+
+            logError('BOOT', 'tunnel failed', {
+                error: err.message,
+                stack: err.stack
+            });
+
+        }
+    })();
     serverProcess.on('message', (msg) => {
         console.log('[MAIN IPC]', msg?.type, JSON.stringify(msg?.data)?.slice(0, 100)); // ← thêm
 
