@@ -84,6 +84,9 @@ export class TunnelService {
                 'cloudflare',
                 'tunnel.json'
             );
+            console.log('cloudflareExe=', cloudflareExe);
+            console.log('configPath=', configPath);
+            console.log('tunnelJsonPath=', tunnelJsonPath)
             const proc = spawn(
                 cloudflareExe,
                 [
@@ -92,7 +95,8 @@ export class TunnelService {
                     configPath,
                     '--cred-file',
                     tunnelJsonPath,
-                    'run'
+                    'run',
+                    'd20810c9-6a49-40b5-a6e8-36707da77fe8'
                 ],
                 {
                     windowsHide: true,
@@ -151,8 +155,25 @@ export class TunnelService {
 
             };
 
-            proc.stdout.on('data', handleOutput);
-            proc.stderr.on('data', handleOutput);
+            proc.stdout.on('data', (data) => {
+
+                const text = data.toString();
+
+                console.log('[CF STDOUT]', text);
+
+                handleOutput(data);
+
+            });
+
+            proc.stderr.on('data', (data) => {
+
+                const text = data.toString();
+
+                console.error('[CF STDERR]', text);
+
+                handleOutput(data);
+
+            });
 
             proc.on('error', (err) => {
 
@@ -215,16 +236,15 @@ export class TunnelService {
             ? path.join(process.cwd(), 'src', 'resources')
             : process.resourcesPath;
 
-        console.log('isDev=', isDev);
-        console.log('srcBase=', srcBase);
+        // =========================
+        // CONFIG
+        // =========================
 
         const configSrc = path.join(
             srcBase,
             'cloudflare',
             'config.yml'
         );
-
-        console.log('configSrc=', configSrc);
 
         const configDest = path.join(
             basePath,
@@ -240,6 +260,32 @@ export class TunnelService {
             );
 
             fs.copyFileSync(configSrc, configDest);
+        }
+
+        // =========================
+        // TUNNEL JSON
+        // =========================
+
+        const tunnelSrc = path.join(
+            srcBase,
+            'cloudflare',
+            'tunnel.json'
+        );
+
+        const tunnelDest = path.join(
+            basePath,
+            'cloudflare',
+            'tunnel.json'
+        );
+
+        if (!fs.existsSync(tunnelDest)) {
+
+            fs.mkdirSync(
+                path.dirname(tunnelDest),
+                { recursive: true }
+            );
+
+            fs.copyFileSync(tunnelSrc, tunnelDest);
         }
     }
 }
