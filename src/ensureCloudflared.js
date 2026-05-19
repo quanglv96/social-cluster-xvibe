@@ -2,21 +2,19 @@ import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 
-const CLOUDFLARED_URL =
+const URL =
     "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe";
 
 export async function ensureCloudflared(exePath) {
 
-    if (fs.existsSync(exePath)) {
-        return exePath;
-    }
+    if (fs.existsSync(exePath)) return exePath;
 
     fs.mkdirSync(path.dirname(exePath), { recursive: true });
 
     const writer = fs.createWriteStream(exePath);
 
     const response = await axios({
-        url: CLOUDFLARED_URL,
+        url: URL,
         method: 'GET',
         responseType: 'stream',
         maxRedirects: 5
@@ -25,9 +23,7 @@ export async function ensureCloudflared(exePath) {
     response.data.pipe(writer);
 
     return new Promise((resolve, reject) => {
-
-        writer.on('finish', () => resolve(exePath));
+        writer.on('finish', resolve);
         writer.on('error', reject);
-
     });
 }
