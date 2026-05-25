@@ -45,108 +45,108 @@ export class TunnelService {
 
     static async start(basePath) {
 
-        const requestId = `${TAG}_${Date.now()}`;
-
-        try {
-
-            log(requestId, 'ENTER start', {
-                basePath,
-                resourcesPath: process.resourcesPath,
-                isPackaged: app.isPackaged
-            });
-
-            const resourceBase = app.isPackaged
-                ? process.resourcesPath
-                : path.join(process.cwd(), 'src', 'resources');
-
-            const cloudflareExe = path.join(
-                resourceBase,
-                'bin',
-                'cloudflared.exe'
-            );
-
-            const configPath = path.join(
-                resourceBase,
-                'cloudflare',
-                'config.yml'
-            );
-
-            const tunnelJsonPath = path.join(
-                resourceBase,
-                'cloudflare',
-                'tunnel.json'
-            );
-
-            log(requestId, 'Resolved paths', {
-                exe: cloudflareExe,
-                config: configPath,
-                tunnel: tunnelJsonPath
-            });
-
-            if (!fs.existsSync(cloudflareExe)) {
-                throw new Error(`cloudflared.exe missing`);
-            }
-
-            if (!fs.existsSync(configPath)) {
-                throw new Error(`config.yml missing`);
-            }
-
-            if (!fs.existsSync(tunnelJsonPath)) {
-                throw new Error(`tunnel.json missing`);
-            }
-
-            const proc = spawn(
-                cloudflareExe,
-                [
-                    'tunnel',
-                    '--config',
-                    configPath,
-                    '--cred-file',
-                    tunnelJsonPath,
-                    'run'
-                ],
-                {
-                    windowsHide: true,
-                    stdio: ['ignore', 'pipe', 'pipe']
-                }
-            );
-
-            this.process = proc;
-
-            log(requestId, 'Tunnel spawned', {
-                pid: proc.pid
-            });
-
-            proc.stdout.on('data', (d) => {
-                log(requestId, '[stdout]', {
-                    msg: d.toString()
-                });
-            });
-
-            proc.stderr.on('data', (d) => {
-                log(requestId, '[stderr]', {
-                    msg: d.toString()
-                });
-            });
-
-            proc.on('error', (err) => {
-                logError(requestId, 'spawn error', err);
-            });
-
-            proc.on('close', (code) => {
-                logWarn(requestId, 'process closed', {
-                    code
-                });
-
-                this.process = null;
-            });
-
-        } catch (err) {
-
-            logError(requestId, 'failed to start', err);
-
-            throw err;
-        }
+        // const requestId = `${TAG}_${Date.now()}`;
+        //
+        // try {
+        //
+        //     log(requestId, 'ENTER start', {
+        //         basePath,
+        //         resourcesPath: process.resourcesPath,
+        //         isPackaged: app.isPackaged
+        //     });
+        //
+        //     const resourceBase = app.isPackaged
+        //         ? process.resourcesPath
+        //         : path.join(process.cwd(), 'src', 'resources');
+        //
+        //     const cloudflareExe = path.join(
+        //         resourceBase,
+        //         'bin',
+        //         'cloudflared.exe'
+        //     );
+        //
+        //     const configPath = path.join(
+        //         resourceBase,
+        //         'cloudflare',
+        //         'config.yml'
+        //     );
+        //
+        //     const tunnelJsonPath = path.join(
+        //         resourceBase,
+        //         'cloudflare',
+        //         'tunnel.json'
+        //     );
+        //
+        //     log(requestId, 'Resolved paths', {
+        //         exe: cloudflareExe,
+        //         config: configPath,
+        //         tunnel: tunnelJsonPath
+        //     });
+        //
+        //     if (!fs.existsSync(cloudflareExe)) {
+        //         throw new Error(`cloudflared.exe missing`);
+        //     }
+        //
+        //     if (!fs.existsSync(configPath)) {
+        //         throw new Error(`config.yml missing`);
+        //     }
+        //
+        //     if (!fs.existsSync(tunnelJsonPath)) {
+        //         throw new Error(`tunnel.json missing`);
+        //     }
+        //
+        //     const proc = spawn(
+        //         cloudflareExe,
+        //         [
+        //             'tunnel',
+        //             '--config',
+        //             configPath,
+        //             '--cred-file',
+        //             tunnelJsonPath,
+        //             'run'
+        //         ],
+        //         {
+        //             windowsHide: true,
+        //             stdio: ['ignore', 'pipe', 'pipe']
+        //         }
+        //     );
+        //
+        //     this.process = proc;
+        //
+        //     log(requestId, 'Tunnel spawned', {
+        //         pid: proc.pid
+        //     });
+        //
+        //     proc.stdout.on('data', (d) => {
+        //         log(requestId, '[stdout]', {
+        //             msg: d.toString()
+        //         });
+        //     });
+        //
+        //     proc.stderr.on('data', (d) => {
+        //         log(requestId, '[stderr]', {
+        //             msg: d.toString()
+        //         });
+        //     });
+        //
+        //     proc.on('error', (err) => {
+        //         logError(requestId, 'spawn error', err);
+        //     });
+        //
+        //     proc.on('close', (code) => {
+        //         logWarn(requestId, 'process closed', {
+        //             code
+        //         });
+        //
+        //         this.process = null;
+        //     });
+        //
+        // } catch (err) {
+        //
+        //     logError(requestId, 'failed to start', err);
+        //
+        //     throw err;
+        // }
     }
 
     static async stop() {

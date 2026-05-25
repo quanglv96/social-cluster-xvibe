@@ -10,13 +10,14 @@ import {PostProfileTrigger} from "../triggers/PostProfileTrigger.js";
 import {TwCrawlTrigger} from "../triggers/TwCrawlTrigger.js";
 import {FacebookContextPool} from "../core/auth/FacebookContextPool.js";
 import {TwitterContextPool} from "../core/auth/TwitterContextPool.js";
-import { resetTunnelServer } from "../app.js";
+import {resetTunnelServer} from "../app.js";
 import {PartnerPostGroupTrigger} from "../triggers/PartnerPostGroupTrigger.js";
 import {TiktokUploadTrigger} from "../triggers/TiktokUploadTrigger.js";
 import {PostFbReelsTrigger} from "../triggers/PostFbReelsTrigger.js";
 import {nowIso} from "../utils/time.js";
 import {RenderVideoTrigger} from "../triggers/RenderVideoTrigger.js";
 import {FbAcceptPageTrigger} from "../triggers/FbAcceptPageTrigger.js";
+import {TiktokSlideTrigger} from "../triggers/TiktokSlideTrigger.js";
 
 const router = express.Router();
 
@@ -64,7 +65,7 @@ function formatMsg(requestId, message, fields = {}) {
 }
 
 function sendToRenderer(type, msg) {
-    process.send?.({ type: 'LOG', data: { type, msg } });
+    process.send?.({type: 'LOG', data: {type, msg}});
 }
 
 function log(requestId, message, fields = {}) {
@@ -78,7 +79,7 @@ function logWarn(requestId, message, fields = {}) {
 }
 
 function logError(requestId, message, err) {
-    const msg = formatMsg(requestId, `❌ ${message}`, { error: err?.message || err });
+    const msg = formatMsg(requestId, `❌ ${message}`, {error: err?.message || err});
     sendToRenderer('error', msg);
 }
 
@@ -171,9 +172,9 @@ function buildQueueItems() {
             duration = t.endedAt - t.processingStartAt;
         }
         return {
-            id:         t.id,
-            action:     t.action,
-            status:     t.status,
+            id: t.id,
+            action: t.action,
+            status: t.status,
             enqueuedAt: t.enqueuedAt,
             duration,
         };
@@ -193,18 +194,18 @@ export function getTotalRequests() {
 }
 
 function sendQueueToUI() {
-    process.send?.({ type: 'queue', data: buildQueueItems() });
+    process.send?.({type: 'queue', data: buildQueueItems()});
 }
 
 function enqueue(task, meta = {}) {
     const entry = {
-        id:         meta.id || buildRequestId('TASK'),
-        action:     meta.action || 'UNKNOWN',
-        dtoType:    meta.dtoType || null,   // ← lưu type để so sánh
+        id: meta.id || buildRequestId('TASK'),
+        action: meta.action || 'UNKNOWN',
+        dtoType: meta.dtoType || null,   // ← lưu type để so sánh
         enqueuedAt: Date.now(),
-        status:     'PENDING',
-        fn:         task,
-        endedAt:    null,
+        status: 'PENDING',
+        fn: task,
+        endedAt: null,
     };
 
     taskRegistry.set(entry.id, entry);
@@ -224,7 +225,7 @@ async function processQueue() {
 
     try {
         while (pendingQueue.length > 0) {
-            const id    = pendingQueue.shift();
+            const id = pendingQueue.shift();
             const entry = taskRegistry.get(id);
             if (!entry) continue;
 
@@ -259,6 +260,9 @@ async function processQueue() {
 // =========================
 // enqueueRequest — trả 202 ngay, xử lý ngầm
 // =========================
+const ADB_TYPES = new Set([
+    'TIKTOK_SLIDE',
+]);
 
 function enqueueRequest(req, res, actionName, TriggerClass) {
     const startTime = Date.now();
@@ -314,12 +318,17 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
                 this.headersSent = true;
                 const success = this._statusCode < 400;
                 sendCallback(callbackUrl, schedulerId, requestId, actionName, dtoType, success, data)
-                    .catch(() => {});
+                    .catch(() => {
+                    });
             }
         }
 
         try {
-            await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime, dtoType);
+            if (ADB_TYPES.has(actionName)){
+                await handleAdbRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime, dtoType);
+            } else {
+                await handleRequest(req, fakeRes, actionName, TriggerClass, requestId, startTime, dtoType);
+            }
         } finally {
             log(requestId, `🏁 DONE`, {
                 action: actionName,
@@ -330,7 +339,7 @@ function enqueueRequest(req, res, actionName, TriggerClass) {
             const closingSeparator = '='.repeat(80);
             sendToRenderer('info', closingSeparator);
         }
-    }, { id: executionId, action: actionName, dtoType }); // ← truyền dtoType vào meta
+    }, {id: executionId, action: actionName, dtoType}); // ← truyền dtoType vào meta
 }
 
 // =========================
@@ -348,6 +357,7 @@ const CONTEXT_MANAGED_TYPES = new Set([
     'POST_TOOL_PAGE',  // ← thêm
     'ACCEPT_PAGE',     // ← thêm
 ]);
+
 async function handleRequest(req, res, actionName, TriggerClass, requestId, startTime, currentDtoType) {
     const dto = req.body;
 
@@ -361,7 +371,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
     ACTIVE_REQUESTS++;
     log(requestTrace, `🚀 REQUEST START`, {action: actionName, active: ACTIVE_REQUESTS, pid: process.pid});
 
-    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE','FB_UPLOAD_REEL','ACCEPT_PAGE'].includes(dto.type);
+    const isFacebook = ['CRAWLS_FB', 'POST_STORY', 'POST_PROFILE', 'POST_GROUP_FB', 'POST_TOOL_PAGE', 'FB_UPLOAD_REEL', 'ACCEPT_PAGE'].includes(dto.type);
     const isTwitter = ['CRAWLS_TWITTER', 'POST_TWITTER'].includes(dto.type);
 
     try {
@@ -464,7 +474,7 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             if (CONTEXT_MANAGED_TYPES.has(currentDtoType)) {
                 // Close thẳng sau khi xử lý xong
                 await measure(requestTrace, 'closeEventPage[finally][managed]', async () => {
-                        await SessionManager.closeEventPage(page);
+                    await SessionManager.closeEventPage(page);
                 });
             } else {
                 // Các type khác — giữ nguyên logic cũ
@@ -490,7 +500,8 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
             const nextActive = ACTIVE_REQUESTS - 1;
             if (nextActive === 0 && pendingQueue.length === 0) {
                 setTimeout(() => {
-                    SessionManager.navigator.start().catch(() => {});
+                    SessionManager.navigator.start().catch(() => {
+                    });
                 }, 0);
             }
         }
@@ -504,6 +515,68 @@ async function handleRequest(req, res, actionName, TriggerClass, requestId, star
     }
 }
 
+// =========================
+// handleAdbRequest — không SessionManager, không Playwright
+// =========================
+async function handleAdbRequest(req, res, actionName, TriggerClass, requestId, startTime, currentDtoType) {
+    const dto = req.body;
+    const requestTrace = `${dto.type}_${dto.scheduler_id}`;
+
+    ACTIVE_REQUESTS++;
+    log(requestTrace, `🚀 REQUEST START [ADB]`, {
+        action: actionName,
+        active: ACTIVE_REQUESTS,
+        pid:    process.pid,
+    });
+
+    try {
+        // Khởi trigger trực tiếp — không cần social context
+        const trigger = new TriggerClass();
+        const result  = await measure(requestTrace, `${TriggerClass.name}.execute`, async () => {
+            return await trigger.execute(dto);  // không truyền page
+        });
+
+        logOk(requestTrace, `REQUEST SUCCESS [ADB]`, {
+            action:  actionName,
+            totalMs: elapsed(startTime),
+        });
+
+        res.json({
+            success:      true,
+            request_id:   requestId,
+            scheduler_id: dto.scheduler_id,
+            value:        result?.count ?? 0,
+            request_type: currentDtoType,
+        });
+
+    } catch (err) {
+        logError(requestTrace, `REQUEST FAILED [ADB] | action=${actionName}`, err);
+
+        // Gửi error log về server (reuse hàm cũ)
+        await sendErrorLog({
+            type:          dto?.type,
+            error_message: err.message,
+            request_id:    requestId,
+            action:        actionName,
+        }).catch(() => {});
+
+        if (!res.headersSent) {
+            res.status(500).json({
+                success:   false,
+                error:     err.message,
+                requestId,
+            });
+        }
+
+    } finally {
+        ACTIVE_REQUESTS--;
+        log(requestTrace, `🔚 REQUEST END [ADB]`, {
+            action:  actionName,
+            active:  ACTIVE_REQUESTS,
+            totalMs: elapsed(startTime),
+        });
+    }
+}
 // =========================
 // sendErrorLog
 // =========================
@@ -560,6 +633,11 @@ router.post('/post-profile', (req, res) =>
 router.post('/upload-tiktok', (req, res) =>
     enqueueRequest(req, res, 'TIKTOK_UPLOAD', TiktokUploadTrigger)
 );
+
+router.post('/upload-slide-tiktok', (req, res) =>
+    enqueueRequest(req, res, 'TIKTOK_SLIDE', TiktokSlideTrigger)
+);
+
 
 router.post('/accept-page', (req, res) =>
     enqueueRequest(req, res, 'ACCEPT_PAGE', FbAcceptPageTrigger)

@@ -1,4 +1,10 @@
 {
   "rootUrl": "https://xvibe.me",
-  "host": "https://xvibe.me"
+  "host": "http://localhost:1234",
+  "adb": {
+    "deviceId": "emulator-5554",
+    "avdName": "TikTok_AVD",
+    "adbPath": "D:\\Program Files\\android-sdk\\platform-tools\\adb.exe",
+    "emulatorPath": "D:\\Program Files\\android-sdk\\emulator\\emulator.exe"
+  }
 }

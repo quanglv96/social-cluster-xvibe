@@ -1,15 +1,17 @@
 // src/main.js
-import {app, BrowserWindow, ipcMain} from 'electron';
+import {app, BrowserWindow, dialog, ipcMain} from 'electron';
 import path from 'path';
 import {fileURLToPath} from 'url';
 import {fork} from 'child_process';
 import {setupGlobalErrorHandler} from "./config/globalErrorHandler.js";
 import fs from 'fs';
-import {runtimeConfig} from "./config/config.js";
+import {runtimeConfig, updateAdbPaths} from "./config/config.js";
 import {setupAutoUpdater} from "./updater.js";
 import pkg from 'electron-updater';
 import {nowIso} from "./utils/time.js";
 import {TunnelService} from "./TunnelService.js";
+import {AdbEnvironmentManager} from "./platforms/adb/AdbEnvironmentManager.js";
+import {AdbController} from "./platforms/adb/AdbController.js";
 
 const {autoUpdater} = pkg;
 
@@ -22,7 +24,6 @@ let serverProcess;
 // ======================
 // Log Utils
 // ======================
-
 
 
 setupGlobalErrorHandler();
@@ -108,7 +109,7 @@ function createWindow() {
 // ======================
 // START SERVER
 // ======================
-function startServer() {
+function startServer(androidTools) {
     if (serverProcess) {
         logWarn('SERVER', 'startServer called but process already running');
         return;
@@ -126,6 +127,9 @@ function startServer() {
                 PORTABLE_EXECUTABLE_DIR: process.env.PORTABLE_EXECUTABLE_DIR
                     || path.dirname(process.execPath),
                 HEADLESS: String(HEADLESS),   // ✅ truyền xuống child process
+                // ✅ dùng tool đã verify
+                ADB_PATH: androidTools.adbPath,
+                EMULATOR_PATH: androidTools.emulatorPath
             }
         }
     );
@@ -174,7 +178,7 @@ function startServer() {
         // 🔥 chỉ restart nếu KHÔNG phải manual
         if (!isManualStop) {
             log('SERVER', '♻️ auto-restarting', {delayMs: 1000});
-            setTimeout(() => startServer(), 1000);
+            setTimeout(() => startServer(cachedAndroidTools), 1000); // ← TRUYỀN VÀO
         } else {
             log('SERVER', '⛔ manual stop — no restart');
             isManualStop = false;
@@ -183,6 +187,7 @@ function startServer() {
 }
 
 let isManualStop = false;
+let cachedAndroidTools = null; // ← THÊM
 
 // ======================
 // CONTROL
@@ -225,11 +230,12 @@ function restartServer() {
         serverProcess.kill();
     }
 
+
     setTimeout(() => {
-        startServer();
+        startServer(cachedAndroidTools); // ← TRUYỀN VÀO
         isRestarting = false;
         log('SERVER', '♻️ restart complete');
-    }, 1000);
+    }, 1000)
 }
 
 ipcMain.on("update-config", (_, data) => {
@@ -266,22 +272,196 @@ ipcMain.on("update-config", (_, data) => {
 // ======================
 // APP
 // ======================
-app.whenReady().then(() => {
+
+// main.js — thay app.whenReady()
+app.whenReady().then(async () => {
     log('APP', '🟢 ready');
     clearRuntimeConfigIfVersionChanged();
     createWindow();
-    startServer();
-    // ✅ Thêm dòng này
+
+    // Server start NGAY
+    startServer({adbPath: null, emulatorPath: null});
+
     mainWindow.webContents.on('did-finish-load', () => {
         sendProfilesToRenderer();
         setupAutoUpdater(mainWindow);
     });
-    // ✅ Fallback: nếu did-finish-load đã fire rồi thì gọi thẳng
     if (!mainWindow.webContents.isLoading()) {
         sendProfilesToRenderer();
         setupAutoUpdater(mainWindow);
     }
+
+    // ADB init bất đồng bộ — không block UI
+    ensureAndroidToolsAsync();
 });
+
+async function ensureAndroidToolsAsync() {
+    log('ADB', '🔧 starting background init...');
+    try {
+        const sdkRoot = await chooseAndroidSdkRoot();
+        process.env.ANDROID_SDK_ROOT = sdkRoot;
+
+        const manager = new AdbEnvironmentManager();
+        logToRenderer('info', '[ADB] 🔧 Initializing Android environment...');
+
+        const result = await manager.ensureReady();
+
+        cachedAndroidTools = result;
+        updateAdbPaths(result);
+
+        log('ADB', '✅ environment ready', result);
+        logToRenderer('ok', `[ADB] ✅ Android ready — adb=${result.adbPath}`);
+
+        // Notify server
+        if (serverProcess) {
+            serverProcess.send({
+                type: 'ADB_READY',
+                payload: {
+                    adbPath: result.adbPath,
+                    emulatorPath: result.emulatorPath,
+                    deviceId: 'emulator-5554',
+                }
+            });
+        }
+
+        // Khởi động emulator ngay sau khi ADB ready
+        // Không chờ job — emulator sẵn sàng trước
+        bootEmulatorInBackground(result);
+
+    } catch (err) {
+        logError('ADB', 'init failed', {error: err.message});
+        logToRenderer('error', `[ADB] ❌ Init failed: ${err.message}`);
+        setTimeout(() => ensureAndroidToolsAsync(), 30_000);
+    }
+}
+
+// Boot emulator ngầm, không block
+function bootEmulatorInBackground(androidTools) {
+    log('ADB', '🤖 booting emulator in background...');
+    logToRenderer('info', '[ADB] 🤖 Starting emulator...');
+
+    // hoặc dùng dynamic import nếu ESM:
+    const adb = new AdbController(
+        'emulator-5554',
+        'BOOT',
+        androidTools.adbPath,
+        androidTools.emulatorPath
+    );
+
+    if (adb.isOnline()) {
+        log('ADB', '✅ emulator already running');
+        logToRenderer('ok', '[ADB] ✅ Emulator already running');
+        return;
+    }
+
+    // Load snapshot nếu có, không thì boot bình thường
+    const snapshotPath = path.join(
+        process.env.USERPROFILE || '',
+        '.android', 'avd', 'TikTok_AVD.avd', 'snapshots', 'clean_with_apps'
+    );
+    const hasSnapshot = fs.existsSync(snapshotPath);
+
+    log('ADB', `snapshot exists: ${hasSnapshot}`);
+    adb.startEmulator('TikTok_AVD', {
+        wipeData: false,
+        snapshot: hasSnapshot ? 'clean_with_apps' : undefined
+    });
+
+    // Poll trạng thái boot để log lên UI
+    let attempt = 0;
+    const poll = setInterval(async () => {
+        attempt++;
+        try {
+            if (adb.isOnline()) {
+                const boot = adb.adb('shell', 'getprop', 'sys.boot_completed');
+                if (boot.trim() === '1') {
+                    clearInterval(poll);
+                    log('ADB', '✅ emulator boot complete');
+                    logToRenderer('ok', '[ADB] ✅ Emulator ready');
+
+                    // Notify server emulator đã sẵn sàng
+                    if (serverProcess) {
+                        serverProcess.send({type: 'EMULATOR_READY', payload: {deviceId: 'emulator-5554'}});
+                    }
+                    return;
+                }
+            }
+            if (attempt % 6 === 0) {
+                logToRenderer('info', `[ADB] ⏳ Emulator booting... (${attempt * 5}s)`);
+            }
+        } catch (_) {
+        }
+
+        if (attempt > 60) { // 5 phút
+            clearInterval(poll);
+            logToRenderer('warn', '[ADB] ⚠️ Emulator boot timeout');
+        }
+    }, 5000);
+}
+
+async function ensureAndroidTools() {
+    const sdkRoot = await chooseAndroidSdkRoot();
+
+    // Truyền sdkRoot vào manager qua env
+    process.env.ANDROID_SDK_ROOT = sdkRoot;
+
+    const manager = new AdbEnvironmentManager();
+    const result = await manager.ensureReady();
+    updateAdbPaths(result);
+    cachedAndroidTools = result;
+    log('ADB', 'self-healing environment ready', result);
+    return result;
+}
+
+async function chooseAndroidSdkRoot() {
+    const userDataPath = app.getPath('userData');
+    const sdkConfigPath = path.join(userDataPath, 'sdk-location.json');
+
+    // Nếu đã chọn trước rồi thì dùng lại
+    if (fs.existsSync(sdkConfigPath)) {
+        const {sdkRoot} = JSON.parse(fs.readFileSync(sdkConfigPath, 'utf-8'));
+        if (sdkRoot && fs.existsSync(sdkRoot)) {
+            console.log('[SDK] using saved location:', sdkRoot);
+            return sdkRoot;
+        }
+    }
+
+    // Hỏi user lần đầu
+    const result = await dialog.showMessageBox({
+        type: 'question',
+        title: 'Chọn vị trí lưu Android SDK',
+        message: 'Android SDK cần ~5GB dung lượng.\nBạn muốn lưu ở đâu?',
+        buttons: ['Chọn thư mục...', 'Dùng mặc định (ổ C)'],
+        defaultId: 0,
+        cancelId: 1,
+    });
+
+    let sdkRoot;
+
+    if (result.response === 0) {
+        // Mở dialog chọn thư mục
+        const folder = await dialog.showOpenDialog({
+            title: 'Chọn thư mục lưu Android SDK',
+            properties: ['openDirectory', 'createDirectory'],
+            buttonLabel: 'Chọn thư mục này',
+        });
+
+        if (folder.canceled || !folder.filePaths[0]) {
+            // User cancel → dùng mặc định
+            sdkRoot = path.join(userDataPath, 'android-sdk');
+        } else {
+            sdkRoot = path.join(folder.filePaths[0], 'android-sdk');
+        }
+    } else {
+        sdkRoot = path.join(userDataPath, 'android-sdk');
+    }
+
+    // Lưu lại để lần sau không hỏi nữa
+    fs.writeFileSync(sdkConfigPath, JSON.stringify({sdkRoot}, null, 2));
+    console.log('[SDK] location saved:', sdkRoot);
+
+    return sdkRoot;
+}
 
 app.on('window-all-closed', () => {
     log('APP', 'all windows closed — shutting down');
@@ -373,29 +553,29 @@ ipcMain.on('open-profile', (_, payload) => {
 });
 
 // Renderer bấm "Xóa" → xóa thư mục profile
-ipcMain.on('delete-profile', (_, { profilePath }) => {
-    log('PROFILES', `delete-profile requested`, { profilePath });
+ipcMain.on('delete-profile', (_, {profilePath}) => {
+    log('PROFILES', `delete-profile requested`, {profilePath});
 
     try {
         // ✅ Đóng context nếu đang mở
         if (serverProcess) {
-            serverProcess.send({ type: 'CLOSE_PROFILE', payload: { profilePath } });
+            serverProcess.send({type: 'CLOSE_PROFILE', payload: {profilePath}});
         }
 
         // Chờ 500ms để context đóng xong rồi mới xóa
         setTimeout(() => {
             try {
-                fs.rmSync(profilePath, { recursive: true, force: true });
-                log('PROFILES', `✅ deleted profile`, { profilePath });
+                fs.rmSync(profilePath, {recursive: true, force: true});
+                log('PROFILES', `✅ deleted profile`, {profilePath});
                 // Refresh lại danh sách
                 sendProfilesToRenderer();
             } catch (err) {
-                logError('PROFILES', `failed to delete profile`, { error: err.message });
+                logError('PROFILES', `failed to delete profile`, {error: err.message});
             }
         }, 500);
 
     } catch (err) {
-        logError('PROFILES', `delete-profile error`, { error: err.message });
+        logError('PROFILES', `delete-profile error`, {error: err.message});
     }
 });
 

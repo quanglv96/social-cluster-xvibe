@@ -125,46 +125,57 @@ export class FacebookPartnerPostGroup {
                     await this.delay.action('after focus textbox', page);
 
                     try {
-                        await this.context.grantPermissions(['clipboard-read', 'clipboard-write']);
-                        await page.evaluate(async (text) => {
-                            await navigator.clipboard.writeText(text);
-                        }, content);
-
-                        await page.keyboard.press('Control+A');
-                        await page.keyboard.press('Backspace');
-                        await page.keyboard.press('Control+V');
-                        await page.keyboard.press('Space'); // ✅ thêm space sau khi paste xong
-
-                        log(TAG, 'Content pasted via clipboard');
-
-                    } catch (e) {
-                        logWarn(TAG, 'Clipboard failed, fallback to JS set');
+                        const normalizedContent = content
+                            .replace(/\r\n/g, '\n')
+                            .replace(/\r/g, '\n');
 
                         await page.evaluate((text) => {
                             const el = document.querySelector(
                                 'div[role="dialog"] div[role="textbox"][contenteditable="true"]'
                             );
+
+                            if (!el) {
+                                throw new Error('Cannot find textbox');
+                            }
+
+                            el.focus();
+
+                            const data = new DataTransfer();
+                            data.setData('text/plain', text);
+
+                            const pasteEvent = new ClipboardEvent('paste', {
+                                clipboardData: data,
+                                bubbles: true,
+                                cancelable: true
+                            });
+
+                            el.dispatchEvent(pasteEvent);
+
+                        }, normalizedContent);
+
+                        log(TAG, 'Content pasted with line breaks preserved');
+
+                    } catch (e) {
+                        logWarn(TAG, 'Paste failed, fallback to JS set');
+
+                        await page.evaluate((text) => {
+                            const el = document.querySelector(
+                                'div[role="dialog"] div[role="textbox"][contenteditable="true"]'
+                            );
+
                             if (el) {
                                 el.focus();
-                                el.innerHTML = '';
+                                el.textContent = text;
 
-                                const lines = text.split('\n');
-                                lines.forEach((line, index) => {
-                                    const span = document.createElement('span');
-                                    span.textContent = line;
-                                    el.appendChild(span);
-                                    if (index < lines.length - 1) {
-                                        el.appendChild(document.createElement('br'));
-                                    }
-                                });
-                                el.dispatchEvent(new InputEvent('input', {bubbles: true}));
-                                el.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true}));
-                                el.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+                                el.dispatchEvent(
+                                    new InputEvent('input', {
+                                        bubbles: true,
+                                        inputType: 'insertText',
+                                        data: text
+                                    })
+                                );
                             }
                         }, content);
-
-                        // ✅ thêm space sau khi JS inject xong
-                        await page.keyboard.press('Space');
                     }
 
                     log(TAG, `Content filled`);

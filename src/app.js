@@ -5,7 +5,7 @@ import {BrowserManager} from './core/browser/BrowserManager.js';
 import {AppRegistryService} from "./AppRegistryService.js";
 import {TunnelService} from "./TunnelService.js";
 import os from 'os';
-import {runtimeConfig} from "./config/config.js";
+import {runtimeConfig, updateAdbPaths} from "./config/config.js";
 import {FacebookContextPool} from "./core/auth/FacebookContextPool.js";
 import {nowIso} from "./utils/time.js";
 
@@ -231,8 +231,8 @@ async function bootstrap() {
 
 // app.js
 export async function resetTunnelServer() { // ← thêm async, sửa typo Server
-    // const publicUrl = await TunnelService.start(PORT);
-    // log('TUNNEL', `started`, { url: publicUrl });
+    const publicUrl = await TunnelService.start(PORT);
+    log('TUNNEL', `started`, { url: publicUrl });
     // await registerWithRetry(publicUrl);
 }
 
@@ -378,6 +378,16 @@ process.on('message', async (msg) => {
             logWarn('PROFILES', 'close context error', { error: err.message });
         }
         return;
+    }
+
+    if (msg.type === 'ADB_READY') {
+        const { adbPath, emulatorPath, deviceId } = msg.payload;
+
+        // Update runtimeConfig trong server process
+        updateAdbPaths({ adbPath, emulatorPath });
+        runtimeConfig.adb = { adbPath, emulatorPath, deviceId };
+
+        console.log('[APP] ADB_READY received', { adbPath, emulatorPath });
     }
 });
 
