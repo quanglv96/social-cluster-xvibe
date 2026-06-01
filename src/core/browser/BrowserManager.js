@@ -1,6 +1,12 @@
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import fs from "fs";
-import {nowIso} from "../../utils/time.js";
+import { nowIso } from "../../utils/time.js";
+
+// =========================
+// Stealth Plugin
+// =========================
+chromium.use(StealthPlugin());
 
 // =========================
 // Log Utils
@@ -26,23 +32,140 @@ let launching = null;
 const activeContexts = new Map();
 
 // =========================
-// Args — KHÔNG có remote-debugging-port, không có window-position
+// Stealth Args
 // =========================
 const STEALTH_ARGS = [
     '--disable-blink-features=AutomationControlled',
+    '--disable-automation',
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-infobars',
-    // Bổ sung thêm để tăng độ tin cậy
     '--disable-web-security',
     '--disable-features=IsolateOrigins,site-per-process',
+    '--use-fake-ui-for-media-stream',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--disable-ipc-flooding-protection',
+    '--password-store=basic',
+    '--use-mock-keychain',
+    '--lang=vi-VN',
 ];
 
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+// =========================
+// Window Bounds
+// =========================
 const OFFSCREEN = { left: -32000, top: -32000, width: 1366, height: 768, windowState: 'normal' };
 const ONSCREEN  = { windowState: 'maximized' };
+
+// =========================
+// Stealth Init Script — truyền dạng STRING để serialize đúng
+// =========================
+const STEALTH_INIT_SCRIPT = `(${function () {
+    // 1. Xóa webdriver flag
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+    // 2. Fake plugins — PluginArray-like
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+            const defs = [
+                { name: 'Chrome PDF Plugin',  filename: 'internal-pdf-viewer' },
+                { name: 'Chrome PDF Viewer',  filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                { name: 'Native Client',      filename: 'internal-nacl-plugin' },
+            ];
+            const arr = defs.map(({ name, filename }) => ({
+                name, filename, description: name, length: 1,
+                item: () => null, namedItem: () => null,
+            }));
+            arr.item      = (i) => arr[i] ?? null;
+            arr.namedItem = (n) => arr.find(p => p.name === n) ?? null;
+            arr.refresh   = () => {};
+            Object.defineProperty(arr, 'length', { value: arr.length });
+            return arr;
+        }
+    });
+
+    // 3. Languages khớp locale vi-VN
+    Object.defineProperty(navigator, 'languages', {
+        get: () => ['vi-VN', 'vi', 'en-US', 'en'],
+    });
+
+    // 4. Chrome runtime object
+    if (!window.chrome) {
+        window.chrome = {
+            runtime: {
+                id: undefined,
+                connect: () => {},
+                sendMessage: () => {},
+                onMessage: { addListener: () => {}, removeListener: () => {} },
+            },
+            loadTimes: function () { return {}; },
+            csi:       function () { return {}; },
+            app:       { isInstalled: false },
+        };
+    }
+
+    // 5. Patch permissions
+    const origQuery = window.navigator.permissions.query.bind(navigator.permissions);
+    window.navigator.permissions.query = (params) =>
+        params.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : origQuery(params);
+
+    // 6. Ẩn playwright/puppeteer trong Error stack
+    const OrigError = window.Error;
+    window.Error = function (...args) {
+        const err = new OrigError(...args);
+        if (err.stack) {
+            err.stack = err.stack.replace(/playwright|puppeteer/gi, 'chrome');
+        }
+        return err;
+    };
+    Object.assign(window.Error, OrigError);
+
+    // 7. Patch iframe contentWindow.navigator (Facebook dùng cái này)
+    const origGetter = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow')?.get;
+    if (origGetter) {
+        Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+            get: function () {
+                const win = origGetter.call(this);
+                if (win && win.navigator) {
+                    try {
+                        Object.defineProperty(win.navigator, 'webdriver', { get: () => undefined });
+                    } catch {}
+                }
+                return win;
+            }
+        });
+    }
+}})()`;
+
+// =========================
+// Helper: inject stealth + reload pages đang mở
+// =========================
+async function applyStealthToContext(context, profileLabel = '?') {
+    // Inject vào mọi page mới (kể cả chưa load)
+    await context.addInitScript(STEALTH_INIT_SCRIPT);
+
+    // Reload các page đang sống để script có hiệu lực ngay
+    const pages = context.pages();
+    if (pages.length) {
+        log('BROWSER', `🔄 reloading ${pages.length} existing page(s) for stealth`, { profile: profileLabel });
+        await Promise.all(
+            pages.map(p =>
+                p.isClosed()
+                    ? Promise.resolve()
+                    : p.reload({ waitUntil: 'domcontentloaded' })
+                        .catch(err => logWarn('BROWSER', 'reload failed', { error: err.message }))
+            )
+        );
+    }
+}
 
 // =========================
 export class BrowserManager {
@@ -61,11 +184,12 @@ export class BrowserManager {
 
     static async #launchBrowser() {
         log('BROWSER', '🚀 launching root browser');
+
         const instance = await chromium.launch({
             headless: false,
             args: STEALTH_ARGS,
-            viewport:   null,
-            acceptDownloads: true
+            viewport: null,
+            acceptDownloads: true,
         });
 
         instance.on('disconnected', () => {
@@ -73,17 +197,26 @@ export class BrowserManager {
             browser = null;
         });
 
-        // ✅ Lắng nghe page mới tạo trong root browser → apply visibility ngay
+        // Stealth cho mọi context mới của root browser
+        instance.on('context', async (ctx) => {
+            await applyStealthToContext(ctx, 'root')
+                .catch(err => logWarn('BROWSER', 'root context stealth failed', { error: err.message }));
+        });
+
+        // Visibility cho mọi page mới
         instance.on('page', async (page) => {
-            await BrowserManager.#moveWindow(page);
+            await BrowserManager.#moveWindow(page)
+                .catch(() => {});
         });
 
         logOk('BROWSER', 'root browser launched');
         return instance;
     }
+
     static getActiveContextCount() {
         return activeContexts.size;
     }
+
     // =========================
     // PERSISTENT CONTEXT (per profile)
     // =========================
@@ -102,13 +235,17 @@ export class BrowserManager {
         log('BROWSER', '🚀 launching profile context', { profile: profilePath });
 
         const context = await chromium.launchPersistentContext(profilePath, {
-            headless: false,
-            args: STEALTH_ARGS,
+            headless:   false,
+            args:       STEALTH_ARGS,
             locale:     'vi-VN',
             timezoneId: 'Asia/Ho_Chi_Minh',
-            viewport:   null,  // full theo window size
+            userAgent:  USER_AGENT,
+            viewport:   null,
             timeout:    30000,
         });
+
+        // ✅ Inject stealth + reload pages đang mở
+        await applyStealthToContext(context, profilePath);
 
         activeContexts.set(profilePath, context);
 
@@ -117,7 +254,7 @@ export class BrowserManager {
             activeContexts.delete(profilePath);
         });
 
-        // Apply visibility ngay sau launch
+        // Apply visibility
         await BrowserManager.#applyVisibilityToContext(context, profilePath);
 
         logOk('BROWSER', 'profile context ready', { profile: profilePath });
@@ -141,10 +278,9 @@ export class BrowserManager {
     }
 
     // =========================
-    // SET VISIBILITY — realtime toggle ẩn/hiện
-    // Gọi từ main.js khi nhận SET_HEADLESS
-    // HEADLESS=true  → ẩn (off-screen)
-    // HEADLESS=false → hiện (maximized)
+    // SET VISIBILITY
+    // HEADLESS=true  → offscreen
+    // HEADLESS=false → maximized
     // =========================
     static async setVisibility(headless) {
         HEADLESS = headless;
@@ -152,25 +288,23 @@ export class BrowserManager {
 
         const tasks = [];
 
-        // ✅ Apply cho tất cả profile contexts
         for (const [profilePath, context] of activeContexts) {
             tasks.push(
                 BrowserManager.#applyVisibilityToContext(context, profilePath)
                     .catch(err => logError('BROWSER', 'setVisibility failed', {
                         profile: profilePath,
-                        error: err.message
+                        error: err.message,
                     }))
             );
         }
 
-        // ✅ Apply cho root browser contexts
         if (browser?.isConnected()) {
             for (const ctx of browser.contexts()) {
                 for (const page of ctx.pages()) {
                     tasks.push(
                         BrowserManager.#moveWindow(page)
                             .catch(err => logWarn('BROWSER', 'root browser moveWindow failed', {
-                                error: err.message
+                                error: err.message,
                             }))
                     );
                 }
@@ -182,17 +316,16 @@ export class BrowserManager {
     }
 
     // =========================
-    // PUBLIC: gọi ngay sau newPage() để tránh flash
+    // PUBLIC: gọi ngay sau newPage()
     // =========================
     static async applyVisibilityToPage(page) {
         await BrowserManager.#moveWindow(page);
     }
 
     // =========================
-    // INTERNAL: apply cho toàn bộ pages trong 1 context
+    // INTERNAL: apply visibility cho toàn bộ pages trong 1 context
     // =========================
     static async #applyVisibilityToContext(context, profilePath = '?') {
-        // Chờ page xuất hiện tối đa 5s
         let pages = context.pages();
 
         if (!pages.length) {
@@ -241,7 +374,7 @@ export class BrowserManager {
 
                 log('BROWSER', `🖥️ window moved`, {
                     state: HEADLESS ? 'OFFSCREEN' : 'ONSCREEN',
-                    windowId
+                    windowId,
                 });
 
             } finally {
@@ -265,7 +398,7 @@ export class BrowserManager {
                     .then(() => log('BROWSER', 'context closed', { profile: profilePath }))
                     .catch(err => logError('BROWSER', 'error closing context', {
                         profile: profilePath,
-                        error: err.message
+                        error: err.message,
                     }))
             );
         }

@@ -51,6 +51,10 @@ export class FacebookAuth extends BaseAuth {
         const page = await context.newPage();
         let cookieLoginSuccess = false;
 
+        const originalCookies = cookie
+            ? this.normalizeCookies(cookie)
+            : [];
+
         if (cookie) {
             try {
                 log(TAG, `Trying cookie login`);
@@ -129,17 +133,23 @@ export class FacebookAuth extends BaseAuth {
             if (!loginSuccess) {
                 throw new Error("Login failed after 3 attempts");
             }
-
-            const newCookies = await context.cookies();
-            await axios.post(`${runtimeConfig.api.apiUpdateCookie}`, {
-                type,
-                user_name,
-                cookie: JSON.stringify(newCookies)
-            });
-
-            logOk(TAG, `Cookies saved to backend`);
         }
+        const latestCookies = this.normalizeCookies(
+            await context.cookies()
+        );
 
+        if (!cookie || this.hasCookieChanged(originalCookies, latestCookies)) {
+            await axios.post(runtimeConfig.api.apiUpdateCookie,
+                {
+                    type,
+                    user_name,
+                    cookie: JSON.stringify(latestCookies)
+                }
+            );
+            logOk(TAG, 'Cookies updated');
+        } else {
+            log(TAG, 'Cookie unchanged, skip update');
+        }
         await page.close();
     }
 
@@ -151,20 +161,35 @@ export class FacebookAuth extends BaseAuth {
     normalizeCookies(rawCookies) {
         if (!rawCookies) return [];
 
-        if (typeof rawCookies === "string") {
+        if (typeof rawCookies === 'string') {
             rawCookies = JSON.parse(rawCookies);
         }
 
-        return rawCookies.map(c => ({
-            name: c.name,
-            value: c.value,
-            domain: c.domain,
-            path: c.path || "/",
-            httpOnly: !!c.httpOnly,
-            secure: !!c.secure,
-            sameSite: 'None',
-            expires: c.expirationDate ? Math.floor(c.expirationDate) : undefined
-        }));
+        return rawCookies
+            .map(c => ({
+                name: c.name,
+                value: c.value,
+                domain: c.domain,
+                path: c.path || '/',
+                httpOnly: !!c.httpOnly,
+                secure: !!c.secure,
+                sameSite: 'None',
+                expires: c.expirationDate
+                    ? Math.floor(c.expirationDate)
+                    : (c.expires || undefined)
+            }))
+            .sort((a, b) =>
+                `${a.domain}${a.path}${a.name}`
+                    .localeCompare(`${b.domain}${b.path}${b.name}`)
+            );
+    }
+
+    hasCookieChanged(oldCookies, newCookies) {
+        return JSON.stringify(
+            this.normalizeCookies(oldCookies)
+        ) !== JSON.stringify(
+            this.normalizeCookies(newCookies)
+        );
     }
 
     async handleFacebookDialogs(page) {

@@ -1,6 +1,6 @@
-import { BaseAuth } from './BaseAuth.js';
+import {BaseAuth} from './BaseAuth.js';
 import axios from 'axios';
-import { config, runtimeConfig } from '../../config/config.js';
+import {config, runtimeConfig} from '../../config/config.js';
 import {nowIso} from "../../utils/time.js";
 
 // =========================
@@ -14,7 +14,7 @@ function formatMsg(requestId, message, fields = {}) {
 }
 
 function sendToRenderer(type, msg) {
-    process.send?.({ type: 'LOG', data: { type, msg } });
+    process.send?.({type: 'LOG', data: {type, msg}});
 }
 
 function log(requestId, message, fields = {}) {
@@ -28,7 +28,7 @@ function logWarn(requestId, message, fields = {}) {
 }
 
 function logError(requestId, message, err) {
-    const msg = formatMsg(requestId, `❌ ${message}`, { error: err?.message || err });
+    const msg = formatMsg(requestId, `❌ ${message}`, {error: err?.message || err});
     sendToRenderer('error', msg);
 }
 
@@ -51,8 +51,8 @@ export class TiktokAuth extends BaseAuth {
 
     async humanType(page, selector, text) {
         const locator = page.locator(selector);
-        await locator.waitFor({ state: 'visible', timeout: 30000 });
-        await locator.click({ delay: 200 });
+        await locator.waitFor({state: 'visible', timeout: 30000});
+        await locator.click({delay: 200});
         await this.sleep(400);
 
         await page.keyboard.down('Control');
@@ -62,7 +62,7 @@ export class TiktokAuth extends BaseAuth {
         await this.sleep(300);
 
         for (const char of text) {
-            await page.keyboard.type(char, { delay: 80 + Math.random() * 120 });
+            await page.keyboard.type(char, {delay: 80 + Math.random() * 120});
         }
 
         await this.sleep(800);
@@ -81,10 +81,10 @@ export class TiktokAuth extends BaseAuth {
     }
 
     async humanClick(page, selector) {
-        log(TAG, `Human-like click`, { selector });
+        log(TAG, `Human-like click`, {selector});
 
         const element = page.locator(selector);
-        await element.waitFor({ state: 'visible', timeout: 10000 });
+        await element.waitFor({state: 'visible', timeout: 10000});
 
         const box = await element.boundingBox();
         if (!box) throw new Error(`Cannot get bounding box for ${selector}`);
@@ -92,14 +92,17 @@ export class TiktokAuth extends BaseAuth {
         const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
         const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
 
-        const currentPos = await page.evaluate(() => ({ x: window.mouseX || 0, y: window.mouseY || 0 }));
+        const currentPos = await page.evaluate(() => ({x: window.mouseX || 0, y: window.mouseY || 0}));
         await this.moveMouseHumanLike(page, currentPos.x, currentPos.y, targetX, targetY);
         await this.sleep(100 + Math.random() * 200);
         await page.mouse.click(targetX, targetY);
 
-        await page.evaluate(({ x, y }) => { window.mouseX = x; window.mouseY = y; }, { x: targetX, y: targetY });
+        await page.evaluate(({x, y}) => {
+            window.mouseX = x;
+            window.mouseY = y;
+        }, {x: targetX, y: targetY});
 
-        log(TAG, `Clicked`, { x: Math.round(targetX), y: Math.round(targetY) });
+        log(TAG, `Clicked`, {x: Math.round(targetX), y: Math.round(targetY)});
     }
 
     // ------------------------------------------------
@@ -112,19 +115,19 @@ export class TiktokAuth extends BaseAuth {
             await axios.post(`${runtimeConfig.api.apiNotifyCaptcha}/TIKTOK`);
             logOk(TAG, `Backend notified about CAPTCHA`);
         } catch (err) {
-            logWarn(TAG, `Failed to notify backend about CAPTCHA`, { error: err.message });
+            logWarn(TAG, `Failed to notify backend about CAPTCHA`, {error: err.message});
         }
 
         // Chờ người dùng / hệ thống giải captcha tối đa 60s
         log(TAG, `Waiting for CAPTCHA to be resolved (max 60s)...`);
         const resolved = await Promise.race([
-            page.waitForURL('**/tiktokstudio**', { timeout: 60000 }).then(() => 'STUDIO'),
-            page.waitForURL('**/foryou**', { timeout: 60000 }).then(() => 'HOME'),
-            page.waitForSelector('input[name="username"]', { timeout: 60000 }).then(() => 'STILL_LOGIN'),
+            page.waitForURL('**/tiktokstudio**', {timeout: 60000}).then(() => 'STUDIO'),
+            page.waitForURL('**/foryou**', {timeout: 60000}).then(() => 'HOME'),
+            page.waitForSelector('input[name="username"]', {timeout: 60000}).then(() => 'STILL_LOGIN'),
             this.sleep(60000).then(() => 'TIMEOUT'),
         ]).catch(() => 'TIMEOUT');
 
-        log(TAG, `CAPTCHA wait result`, { resolved });
+        log(TAG, `CAPTCHA wait result`, {resolved});
         return resolved;
     }
 
@@ -136,14 +139,14 @@ export class TiktokAuth extends BaseAuth {
 
         for (let i = 1; i <= maxRetry; i++) {
             try {
-                log(TAG, `Ensure TikTok login page`, { attempt: i });
+                log(TAG, `Ensure TikTok login page`, {attempt: i});
                 await this.safeGoto(page, 'https://www.tiktok.com/');
                 await this.sleep(2000);
 
                 // Click nút "Đăng nhập" trên top bar
                 log(TAG, `Clicking top-right Login button...`);
                 const loginBtn = page.locator('#top-right-action-bar-login-button');
-                await loginBtn.waitFor({ state: 'visible', timeout: 15000 });
+                await loginBtn.waitFor({state: 'visible', timeout: 15000});
                 await this.humanClick(page, '#top-right-action-bar-login-button');
 
                 logOk(TAG, `Login modal opened`);
@@ -168,14 +171,14 @@ export class TiktokAuth extends BaseAuth {
             hasText: /số điện thoại|email|tên người dùng/i
         }).first();
 
-        await phoneEmailOption.waitFor({ state: 'visible', timeout: 15000 });
+        await phoneEmailOption.waitFor({state: 'visible', timeout: 15000});
 
         const box = await phoneEmailOption.boundingBox();
         if (!box) throw new Error('Cannot get bounding box for phone/email option');
 
         const tx = box.x + box.width * (0.3 + Math.random() * 0.4);
         const ty = box.y + box.height * (0.3 + Math.random() * 0.4);
-        const pos = await page.evaluate(() => ({ x: window.mouseX || 0, y: window.mouseY || 0 }));
+        const pos = await page.evaluate(() => ({x: window.mouseX || 0, y: window.mouseY || 0}));
         await this.moveMouseHumanLike(page, pos.x, pos.y, tx, ty);
         await this.sleep(100 + Math.random() * 200);
         await page.mouse.click(tx, ty);
@@ -186,7 +189,7 @@ export class TiktokAuth extends BaseAuth {
         // Click link "Đăng nhập bằng email hoặc tên người dùng"
         log(TAG, `Switching to email/username login...`);
         const emailLink = page.locator('a[href="/login/phone-or-email/email"]');
-        await emailLink.waitFor({ state: 'visible', timeout: 10000 });
+        await emailLink.waitFor({state: 'visible', timeout: 10000});
         await this.humanClick(page, 'a[href="/login/phone-or-email/email"]');
         logOk(TAG, `Email/username login selected`);
 
@@ -200,13 +203,13 @@ export class TiktokAuth extends BaseAuth {
         const maxRetry = 3;
 
         for (let attempt = 1; attempt <= maxRetry; attempt++) {
-            log(TAG, `Credentials attempt`, { attempt: `${attempt}/${maxRetry}` });
+            log(TAG, `Credentials attempt`, {attempt: `${attempt}/${maxRetry}`});
 
             try {
                 // --- Username ---
                 log(TAG, `Typing username/email...`);
                 const usernameInput = page.locator('input[name="username"]');
-                await usernameInput.waitFor({ state: 'visible', timeout: 15000 });
+                await usernameInput.waitFor({state: 'visible', timeout: 15000});
 
                 await this.humanClick(page, 'input[name="username"]');
                 await this.sleep(300);
@@ -219,19 +222,19 @@ export class TiktokAuth extends BaseAuth {
                 if (typedUser !== username) {
                     throw new Error(`Username mismatch: expected "${username}", got "${typedUser}"`);
                 }
-                logOk(TAG, `Username typed`, { value: typedUser });
+                logOk(TAG, `Username typed`, {value: typedUser});
 
                 // --- Click vào password input ---
                 log(TAG, `Clicking password field...`);
                 const passwordInput = page.locator('input[type="password"]');
-                await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+                await passwordInput.waitFor({state: 'visible', timeout: 10000});
                 await this.humanClick(page, 'input[type="password"]');
                 await this.sleep(400);
 
                 // --- Password ---
                 log(TAG, `Typing password...`);
                 for (const char of password) {
-                    await page.keyboard.type(char, { delay: 80 + Math.random() * 120 });
+                    await page.keyboard.type(char, {delay: 80 + Math.random() * 120});
                 }
                 await this.sleep(800);
 
@@ -266,17 +269,17 @@ export class TiktokAuth extends BaseAuth {
         log(TAG, `Waiting for post-login state...`);
 
         const state = await Promise.race([
-            page.waitForURL('**/tiktokstudio**', { timeout: 20000 }).then(() => 'STUDIO'),
-            page.waitForURL('**/@**', { timeout: 20000 }).then(() => 'PROFILE'),
-            page.waitForURL('**/foryou**', { timeout: 20000 }).then(() => 'HOME'),
-            page.waitForSelector('[class*="captcha"]', { timeout: 20000 }).then(() => 'CAPTCHA'),
-            page.waitForSelector('[id*="captcha"]', { timeout: 20000 }).then(() => 'CAPTCHA'),
-            page.waitForSelector('iframe[src*="captcha"]', { timeout: 20000 }).then(() => 'CAPTCHA'),
-            page.waitForSelector('[data-e2e="captcha"]', { timeout: 20000 }).then(() => 'CAPTCHA'),
+            page.waitForURL('**/tiktokstudio**', {timeout: 20000}).then(() => 'STUDIO'),
+            page.waitForURL('**/@**', {timeout: 20000}).then(() => 'PROFILE'),
+            page.waitForURL('**/foryou**', {timeout: 20000}).then(() => 'HOME'),
+            page.waitForSelector('[class*="captcha"]', {timeout: 20000}).then(() => 'CAPTCHA'),
+            page.waitForSelector('[id*="captcha"]', {timeout: 20000}).then(() => 'CAPTCHA'),
+            page.waitForSelector('iframe[src*="captcha"]', {timeout: 20000}).then(() => 'CAPTCHA'),
+            page.waitForSelector('[data-e2e="captcha"]', {timeout: 20000}).then(() => 'CAPTCHA'),
             this.sleep(20000).then(() => 'TIMEOUT'),
         ]).catch(() => 'TIMEOUT');
 
-        log(TAG, `Post-login state detected`, { state });
+        log(TAG, `Post-login state detected`, {state});
 
         if (state === 'CAPTCHA') {
             logWarn(TAG, `CAPTCHA detected — handling...`);
@@ -293,7 +296,7 @@ export class TiktokAuth extends BaseAuth {
         if (state === 'TIMEOUT') {
             // Kiểm tra thêm URL hiện tại
             const currentUrl = page.url();
-            log(TAG, `Timeout — current URL`, { url: currentUrl });
+            log(TAG, `Timeout — current URL`, {url: currentUrl});
 
             if (currentUrl.includes('tiktok.com') && !currentUrl.includes('login')) {
                 logWarn(TAG, `Seems logged in but slow redirect — continuing`);
@@ -313,7 +316,7 @@ export class TiktokAuth extends BaseAuth {
         // await this.safeGoto(page, 'https://www.tiktok.com/tiktokstudio?lang=vi-VN');
         await this.safeGoto(page, 'https://www.tiktok.com/tiktokstudio/upload?from=creator_center');
         await this.sleep(3000);
-        logOk(TAG, `Upload Studio loaded`, { url: page.url() });
+        logOk(TAG, `Upload Studio loaded`, {url: page.url()});
     }
 
     // ------------------------------------------------
@@ -333,8 +336,9 @@ export class TiktokAuth extends BaseAuth {
         try {
             log(TAG, `Trying cookie login...`);
 
-            const cookies = typeof cookie === 'string' ? JSON.parse(cookie) : cookie;
-            if (!Array.isArray(cookies)) throw new Error('Invalid cookie format');
+            const cookies = this.normalizeCookies(cookie);
+            if (!Array.isArray(cookies))
+                throw new Error('Invalid cookie format');
 
             await context.addCookies(cookies);
             await this.safeGoto(page, 'https://www.tiktok.com/foryou');
@@ -342,12 +346,12 @@ export class TiktokAuth extends BaseAuth {
 
             const url = page.url();
             if (!url.includes('/login')) {
-                logOk(TAG, `Cookie login success`, { url });
+                logOk(TAG, `Cookie login success`, {url});
                 return true;
             }
 
         } catch (err) {
-            logWarn(TAG, `Cookie login failed`, { error: err.message });
+            logWarn(TAG, `Cookie login failed`, {error: err.message});
         }
 
         return false;
@@ -361,16 +365,16 @@ export class TiktokAuth extends BaseAuth {
 
         for (let i = 1; i <= maxRetry; i++) {
             try {
-                log(TAG, `GOTO`, { attempt: i, url });
+                log(TAG, `GOTO`, {attempt: i, url});
 
-                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000, ...options });
+                await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 30000, ...options});
 
                 const content = await page.content();
                 if (page.url() === 'about:blank' || content.length < 1000) {
                     throw new Error('Empty or blank page');
                 }
 
-                logOk(TAG, `GOTO success`, { url });
+                logOk(TAG, `GOTO success`, {url});
                 return;
 
             } catch (err) {
@@ -385,9 +389,14 @@ export class TiktokAuth extends BaseAuth {
     // Main authenticate
     // ------------------------------------------------
     async authenticate(context, dto) {
-        const { cookie, user_name, password } = dto;
+        const {cookie, user_name, password} = dto;
 
         const page = await context.newPage();
+
+        const originalCookies = cookie
+            ? this.normalizeCookies(cookie)
+            : [];
+
         log(TAG, `🚀 START TIKTOK AUTH`);
 
         try {
@@ -420,37 +429,83 @@ export class TiktokAuth extends BaseAuth {
                 // STEP 6: Xử lý captcha / chờ redirect
                 log(TAG, `STEP 6: Handle post-login (captcha / redirect)`);
                 const postState = await this.handlePostLogin(page);
-                log(TAG, `Post-login state resolved`, { postState });
+                log(TAG, `Post-login state resolved`, {postState});
             }
 
             // STEP 7: Điều hướng sang Studio
             log(TAG, `STEP 7: Navigate to TikTok Studio`);
             await this.goToStudio(page);
             logOk(TAG, `🎉 TikTok login complete — now in Studio`);
-            //
-            // // STEP 8: Click nút Tải lên
-            // log(TAG, `STEP 8: Click Upload button`);
-            // await this.clickUploadButton(page);
 
-            // Lưu cookie mới về backend
-            const newCookies = await context.cookies();
-            await axios.post(`${runtimeConfig.api.apiUpdateCookie}`, {
-                type: dto.type,
-                cookie: JSON.stringify(newCookies),
-            });
-            logOk(TAG, `Cookies saved to backend`);
+            await page.waitForLoadState('networkidle');
+            await this.sleep(3000);
 
+            const latestCookies = this.normalizeCookies(
+                await context.cookies()
+            );
+
+            if (!cookie || this.hasCookieChanged(originalCookies, latestCookies)) {
+                await axios.post(
+                    runtimeConfig.api.apiUpdateCookie,
+                    {
+                        type: dto.type,
+                        cookie: JSON.stringify(latestCookies)
+                    }
+                );
+                logOk(TAG, 'Cookies updated');
+            } else {
+                log(
+                    TAG,
+                    'Cookie unchanged, skip update'
+                );
+
+            }
         } catch (err) {
             logError(TAG, `Auth failed`, err);
 
             try {
-                await page.screenshot({ path: 'tiktok-auth-error.png' });
-            } catch {}
+                await page.screenshot({path: 'tiktok-auth-error.png'});
+            } catch {
+            }
 
             throw err;
 
         } finally {
             await page.close();
         }
+    }
+
+    normalizeCookies(rawCookies) {
+        if (!rawCookies) return [];
+
+        if (typeof rawCookies === 'string') {
+            rawCookies = JSON.parse(rawCookies);
+        }
+
+        return rawCookies
+            .map(c => ({
+                name: c.name,
+                value: c.value,
+                domain: c.domain,
+                path: c.path || '/',
+                httpOnly: !!c.httpOnly,
+                secure: !!c.secure,
+                sameSite: 'None',
+                expires: c.expirationDate
+                    ? Math.floor(c.expirationDate)
+                    : (c.expires || undefined)
+            }))
+            .sort((a, b) =>
+                `${a.domain}${a.path}${a.name}`
+                    .localeCompare(`${b.domain}${b.path}${b.name}`)
+            );
+    }
+
+    hasCookieChanged(oldCookies, newCookies) {
+        return JSON.stringify(
+            this.normalizeCookies(oldCookies)
+        ) !== JSON.stringify(
+            this.normalizeCookies(newCookies)
+        );
     }
 }

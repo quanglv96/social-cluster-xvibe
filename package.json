@@ -65,6 +65,9 @@
     "localtunnel": "^2.0.2",
     "ngrok": "^5.0.0-beta.2",
     "playwright": "^1.58.2",
+    "playwright-extra": "^4.3.6",
+    "playwright-extra-plugin-stealth": "^0.0.1",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "twitter-text": "^3.1.0"
   },
   "devDependencies": {
