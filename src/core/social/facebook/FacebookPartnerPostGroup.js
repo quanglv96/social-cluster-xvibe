@@ -261,11 +261,14 @@ export class FacebookPartnerPostGroup {
             }
             logOk(TAG, `Post process completed`);
 
-            await this.switchToProfile(page, TAG);
-
             return {success: true};
-
         } finally {
+            // ===== LUÔN QUAY VỀ PROFILE =====
+            try {
+                await this.switchToProfile(page, TAG);
+            } catch (e) {
+                logWarn(TAG, 'Cannot switch back to profile in finally');
+            }
             // ===== XÓA TẤT CẢ FILE TẠM =====
             for (const filePath of tempFiles) {
                 try {
