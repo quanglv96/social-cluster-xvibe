@@ -181,7 +181,23 @@ export class BrowserManager {
         launching = null;
         return browser;
     }
+    static async resetContext(profilePath) {
 
+        const context = activeContexts.get(profilePath);
+
+        if (!context) {
+            return;
+        }
+
+        activeContexts.delete(profilePath);
+
+        try {
+            await context.close();
+        } catch {}
+
+        return await BrowserManager.newContext(profilePath);
+
+    }
     static async #launchBrowser() {
         log('BROWSER', '🚀 launching root browser');
 
