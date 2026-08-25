@@ -20,7 +20,7 @@ export class TwitterSocial extends BaseSocial {
         const page = await TwitterContextPool.createEventPage(dto);
 
         // goto nằm ở đây thay vì trong Trigger
-        await page.goto(dto.source + '/media', {
+        await page.goto(dto.source + '/media?filter=photo', {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });

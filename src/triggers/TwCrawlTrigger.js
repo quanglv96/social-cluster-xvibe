@@ -57,7 +57,7 @@ export class TwCrawlTrigger {
             // 1. CRAWL
             // goto + page đều nằm trong TwitterSocial.twCrawler
             // =====================
-            log(requestId, 'Crawling images', { url: `${source}/media` });
+            log(requestId, 'Crawling images', { url: `${source}/media?filter=photo` });
 
             const { success, images, newLastUrl } =
                 await this.social.twCrawler(dto);
